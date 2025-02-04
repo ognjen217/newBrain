@@ -1,0 +1,78 @@
+{% extends "layout.html" %}
+{% block title %}Brain Dashboard{% endblock %}
+
+{% block content %}
+<section id="camera-section" class="dashboard-section">
+  <h2>Kamera</h2>
+  <div class="camera-output">
+    {% if status.sensor_data.image %}
+      <img src="data:image/jpeg;base64,{{ status.sensor_data.image }}" alt="Camera Output">
+    {% else %}
+      <p>Nema dostupnog izlaza sa kamere.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section id="system-status" class="dashboard-section">
+  <h2>Sistem Status</h2>
+  <div class="status-item">
+    <strong>Brzina Motora:</strong> {{ status.motor_status.current_speed }} km/h
+  </div>
+  <div class="status-item">
+    <strong>Steering:</strong>
+    {% if status.sensor_data.steering is defined %}
+      {{ status.sensor_data.steering }}°
+    {% else %}
+      N/A
+    {% endif %}
+  </div>
+  <div class="status-item">
+    <strong>Napon Baterije:</strong>
+    {% if status.sensor_data.battery_voltage is defined %}
+      {{ status.sensor_data.battery_voltage }} V
+    {% else %}
+      N/A
+    {% endif %}
+  </div>
+  <div class="status-item">
+    <strong>CPU Status:</strong>
+    <ul class="cpu-status-list">
+      {% for usage in status.cpu_status %}
+        <li>Core {{ loop.index }}: {{ usage }}%</li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<section id="additional-data" class="dashboard-section">
+  <h2>Ostali Senzorski Podaci</h2>
+  <pre>{{ status.sensor_data | tojson(indent=2) }}</pre>
+</section>
+
+<section id="control-section" class="dashboard-section">
+  <h2>Kontrola</h2>
+  <p class="control-instructions">
+    Koristite tastere <strong>W</strong> (ubrzanje), <strong>S</strong> (kočenje), <strong>A</strong> (skretanje ulevo) i <strong>D</strong> (skretanje udesno).
+  </p>
+  <p id="controlStatus" class="control-status">Nema komandi...</p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('keydown', function(event) {
+    const key = event.key.toUpperCase();
+    if (["W", "A", "S", "D"].includes(key)) {
+      document.getElementById('controlStatus').textContent = "Primljena komanda: " + key;
+      fetch('/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: key })
+      })
+      .then(response => response.json())
+      .then(data => console.log("Odgovor:", data))
+      .catch(error => console.error("Greška pri slanju komande:", error));
+    }
+  });
+</script>
+{% endblock %}

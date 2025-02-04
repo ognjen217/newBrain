@@ -51,3 +51,5 @@ def run_in_process_pool(target, args_list, max_workers=None):
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         results = list(executor.map(lambda args: target(*args), args_list))
     return results
+
+Thread = run_in_thread

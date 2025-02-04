@@ -1,0 +1,10 @@
+{% extends "layout.html" %}
+{% block title %}Greška{% endblock %}
+
+{% block content %}
+<div class="error-container">
+  <h2>Došlo je do greške</h2>
+  <p>{{ error_message }}</p>
+  <a href="/">Vratite se na početnu stranicu</a>
+</div>
+{% endblock %}

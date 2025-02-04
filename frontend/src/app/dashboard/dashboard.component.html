@@ -1,0 +1,47 @@
+<div class="dashboard-container">
+  <header>
+    <h1>Brain System Dashboard</h1>
+  </header>
+
+  <section class="camera-section">
+    <h2>Camera</h2>
+    <div *ngIf="status?.sensor_data?.image; else noImage">
+      <img [src]="'data:image/jpeg;base64,' + status.sensor_data.image" alt="Camera Output">
+    </div>
+    <ng-template #noImage>
+      <p>No camera output available.</p>
+    </ng-template>
+  </section>
+
+  <section class="status-section">
+    <h2>System Status</h2>
+    <div>
+      <strong>Motor Speed:</strong> {{ status?.motor_status?.current_speed }} km/h
+    </div>
+    <div>
+      <strong>Steering:</strong> {{ status?.sensor_data?.steering || 'N/A' }}°
+    </div>
+    <div>
+      <strong>Battery Voltage:</strong> {{ status?.sensor_data?.battery_voltage || 'N/A' }} V
+    </div>
+    <div>
+      <strong>CPU Status:</strong>
+      <ul>
+        <li *ngFor="let usage of status?.cpu_status; let i = index">
+          Core {{ i+1 }}: {{ usage }}%
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="additional-data">
+    <h2>Additional Sensor Data</h2>
+    <pre>{{ status?.sensor_data | json }}</pre>
+  </section>
+
+  <section class="control-section">
+    <h2>Control</h2>
+    <p>{{ controlMessage }}</p>
+    <p>Use W (accelerate), S (decelerate), A (turn left) and D (turn right)</p>
+  </section>
+</div>
