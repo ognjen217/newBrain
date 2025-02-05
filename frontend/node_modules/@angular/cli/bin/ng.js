@@ -4,12 +4,22 @@
  * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
- * found in the LICENSE file at https://angular.io/license
+ * found in the LICENSE file at https://angular.dev/license
  */
 
 /* eslint-disable no-console */
 /* eslint-disable import/no-unassigned-import */
 'use strict';
+
+const path = require('path');
+
+// Error if the external CLI appears to be used inside a google3 context.
+if (process.cwd().split(path.sep).includes('google3')) {
+  console.error(
+    'This is the external Angular CLI, but you appear to be running in google3. There is a separate, internal version of the CLI which should be used instead. See http://go/angular/cli.',
+  );
+  process.exit();
+}
 
 // Provide a title to the process in `ps`.
 // Due to an obscure Mac bug, do not start this title with any symbol.
@@ -41,22 +51,17 @@ if (version[0] % 2 === 1) {
       process.version +
       ' detected.\n' +
       'Odd numbered Node.js versions will not enter LTS status and should not be used for production.' +
-      ' For more information, please see https://nodejs.org/en/about/releases/.',
+      ' For more information, please see https://nodejs.org/en/about/previous-releases/.',
   );
 
   require('./bootstrap');
-} else if (
-  version[0] < 14 ||
-  (version[0] === 14 && version[1] < 20) ||
-  (version[0] === 16 && version[1] < 13) ||
-  (version[0] === 18 && version[1] < 10)
-) {
-  // Error and exit if less than 14.20, 16.13 or 18.10
+} else if (version[0] < 18 || (version[0] === 18 && version[1] < 19)) {
+  // Error and exit if less than 18.19
   console.error(
     'Node.js version ' +
       process.version +
       ' detected.\n' +
-      'The Angular CLI requires a minimum Node.js version of either v14.20, v16.13 or v18.10.\n\n' +
+      'The Angular CLI requires a minimum Node.js version of v18.19.\n\n' +
       'Please update your Node.js version or visit https://nodejs.org/ for additional instructions.\n',
   );
 

@@ -3,10 +3,10 @@
  * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
- * found in the LICENSE file at https://angular.io/license
+ * found in the LICENSE file at https://angular.dev/license
  */
 import { json, logging } from '@angular-devkit/core';
-import { Observable, SubscribableOrPromise } from 'rxjs';
+import { Observable, ObservableInput } from 'rxjs';
 import { Schema as RealBuilderInput, Target as RealTarget } from './input-schema';
 import { Registry } from './jobs';
 import { Schema as RealBuilderOutput } from './output-schema';
@@ -74,6 +74,11 @@ export interface BuilderRun {
      * interested in the result of that single run, not of a watch-mode builder.
      */
     result: Promise<BuilderOutput>;
+    /**
+     * The last output from a builder. This is recommended when scheduling a builder and only being
+     * interested in the result of that last run.
+     */
+    lastOutput: Promise<BuilderOutput>;
     /**
      * The output(s) from the builder. A builder can have multiple outputs.
      * This always replay the last output when subscribed.
@@ -213,7 +218,7 @@ export interface BuilderContext {
 /**
  * An accepted return value from a builder. Can be either an Observable, a Promise or a vector.
  */
-export type BuilderOutputLike = AsyncIterable<BuilderOutput> | SubscribableOrPromise<BuilderOutput> | BuilderOutput;
+export type BuilderOutputLike = ObservableInput<BuilderOutput> | BuilderOutput;
 export declare function isBuilderOutput(obj: any): obj is BuilderOutput;
 export declare function fromAsyncIterable<T>(iterable: AsyncIterable<T>): Observable<T>;
 /**
@@ -244,12 +249,13 @@ export type BuilderInfo = json.JsonObject & {
  */
 export declare function targetStringFromTarget({ project, target, configuration }: Target): string;
 /**
- * Return a Target tuple from a string.
+ * Return a Target tuple from a specifier string.
+ * Supports abbreviated target specifiers (examples: `::`, `::development`, or `:build:production`).
  */
-export declare function targetFromTargetString(str: string): Target;
+export declare function targetFromTargetString(specifier: string, abbreviatedProjectName?: string, abbreviatedTargetName?: string): Target;
 /**
  * Schedule a target, and forget about its run. This will return an observable of outputs, that
- * as a a teardown will stop the target from running. This means that the Run object this returns
+ * as a teardown will stop the target from running. This means that the Run object this returns
  * should not be shared.
  *
  * The reason this is not part of the Context interface is to keep the Context as normal form as

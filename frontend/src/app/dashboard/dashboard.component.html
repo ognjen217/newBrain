@@ -3,45 +3,62 @@
     <h1>Brain System Dashboard</h1>
   </header>
 
-  <section class="camera-section">
+  <!-- Camera Section -->
+  <section class="section camera-section">
     <h2>Camera</h2>
-    <div *ngIf="status?.sensor_data?.image; else noImage">
-      <img [src]="'data:image/jpeg;base64,' + status.sensor_data.image" alt="Camera Output">
+    <div class="camera-output">
+      <ng-container *ngIf="status?.sensor_data?.image; else noImage">
+        <img [src]="'data:image/jpeg;base64,' + status.sensor_data.image" alt="Camera Output">
+      </ng-container>
+      <ng-template #noImage>
+        <p>No camera output available.</p>
+      </ng-template>
     </div>
-    <ng-template #noImage>
-      <p>No camera output available.</p>
+  </section>
+
+  <!-- CPU Usage Section -->
+  <section class="section cpu-section">
+    <h2>CPU Core Usage</h2>
+    <div *ngIf="status?.cpu_status; else noCpu">
+      <div *ngFor="let usage of status.cpu_status; let i = index" class="cpu-core">
+        <div class="cpu-label">Core {{ i + 1 }}: {{ usage }}%</div>
+        <div class="cpu-bar-container">
+          <div class="cpu-bar" [style.width.%]="usage"></div>
+        </div>
+      </div>
+    </div>
+    <ng-template #noCpu>
+      <p>No CPU data available.</p>
     </ng-template>
   </section>
 
-  <section class="status-section">
-    <h2>System Status</h2>
-    <div>
-      <strong>Motor Speed:</strong> {{ status?.motor_status?.current_speed }} km/h
+  <!-- Steering Gauge Section -->
+  <section class="section gauge-section">
+    <h2>Steering Position</h2>
+    <div class="gauge-container">
+      <!-- For simplicity, we'll create a simple gauge using a circle background and a needle -->
+      <div class="gauge" id="steeringGauge">
+        <div class="gauge-needle" [style.transform]="'rotate(' + steeringAngle + 'deg)'"></div>
+      </div>
     </div>
-    <div>
-      <strong>Steering:</strong> {{ status?.sensor_data?.steering || 'N/A' }}°
-    </div>
-    <div>
-      <strong>Battery Voltage:</strong> {{ status?.sensor_data?.battery_voltage || 'N/A' }} V
-    </div>
-    <div>
-      <strong>CPU Status:</strong>
-      <ul>
-        <li *ngFor="let usage of status?.cpu_status; let i = index">
-          Core {{ i+1 }}: {{ usage }}%
-        </li>
-      </ul>
-    </div>
+    <div class="gauge-label">Steering: {{ status?.sensor_data?.steering || 0 }}°</div>
   </section>
 
-  <section class="additional-data">
-    <h2>Additional Sensor Data</h2>
-    <pre>{{ status?.sensor_data | json }}</pre>
+  <!-- Motor Speed Gauge Section -->
+  <section class="section gauge-section">
+    <h2>Motor Speed</h2>
+    <div class="gauge-container">
+      <div class="gauge" id="motorGauge">
+        <div class="gauge-needle" [style.transform]="'rotate(' + motorAngle + 'deg)'"></div>
+      </div>
+    </div>
+    <div class="gauge-label">Motor Speed: {{ status?.motor_status?.current_speed || 0 }} km/h</div>
   </section>
 
-  <section class="control-section">
+  <!-- Control Section -->
+  <section class="section control-section">
     <h2>Control</h2>
-    <p>{{ controlMessage }}</p>
-    <p>Use W (accelerate), S (decelerate), A (turn left) and D (turn right)</p>
+    <p id="controlStatus">{{ controlMessage }}</p>
+    <p>Use W (accelerate), S (decelerate), A (turn left), and D (turn right)</p>
   </section>
 </div>

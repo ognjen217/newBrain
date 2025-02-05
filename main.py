@@ -1,58 +1,35 @@
-#!/usr/bin/env python3
-import time
 import logging
-from utils.logger import get_logger
-import config.config as cfg_module
-
+import time
+from multiprocessing import Process
+from config import config
 from firmware.nucleo_comm import NucleoComm
-from firmware.sensor_manager import SensorManager
 from firmware.motor_control import MotorControl
-
-from apis.bosch_api import BoschAPI
-from apis.simulated_server import SimulatedServer
-
-from utils.parallel import run_in_thread
+from firmware.sensor_manager import SensorManager
 from monitoring.monitor import Monitor, DashboardServer
 
 def main():
-    logger = get_logger('Main')
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+    logger = logging.getLogger("Main")
     logger.info("Pokretanje Brain sistema...")
 
-    try:
-        config_data = cfg_module.load_config()
-    except Exception as e:
-        logger.error("Greška pri učitavanju konfiguracije: %s", e)
-        return
+    config_data = config.load_config()
 
-    try:
-        nucleo = NucleoComm(config_data.get("nucleo", {}))
-        sensor_manager = SensorManager(config_data.get("sensors", {}))
-        motor_control = MotorControl(config_data.get("motors", {}))
-    except Exception as e:
-        logger.error("Greška pri inicijalizaciji hardvera: %s", e)
-        return
+    # Start separate camera process pinned to a specific core (e.g., core 3)
+    from firmware.camera_process import camera_process  # assume you put the above function in camera_process.py
+    cam_proc = Process(target=camera_process, args=(config_data, 3))
+    cam_proc.start()
 
-    try:
-        bosch_api = BoschAPI(config_data.get("apis", {}).get("bosch", {}))
-        simulated_server = SimulatedServer(config_data.get("apis", {}).get("simulated", {}))
-    except Exception as e:
-        logger.error("Greška pri inicijalizaciji API-ja: %s", e)
-        return
-
-    # Pokrećemo akviziciju senzorskih podataka u zasebnoj niti
-    sensor_thread = run_in_thread(
-        target=sensor_manager.start_acquisition,
-        name="SensorThread"
-    )
-
-    # Pokrećemo monitoring sistema (koji uključuje dashboard i endpoint za kontrolu)
+    # Initialize other components as before
+    nucleo = NucleoComm(config_data.get("nucleo", {}))
+    motor_control = MotorControl(config_data.get("motors", {}), nucleo_comm=nucleo)
+    sensor_manager = SensorManager(config_data.get("sensors", {}))
     monitor_instance = Monitor(sensor_manager, motor_control, nucleo, config_data.get("monitor_interval", 1.0))
     monitor_instance.start()
 
-    # Ako je dashboard omogućen, pokrećemo ga
     if config_data.get("dashboard_enabled", False):
         dashboard_host = config_data.get("dashboard_host", "0.0.0.0")
-        dashboard_port = config_data.get("dashboard_port", 124)
+        dashboard_port = config_data.get("dashboard_port", 5000)
         dashboard = DashboardServer(monitor_instance, host=dashboard_host, port=dashboard_port)
         dashboard.start()
         logger.info("Dashboard integracija je omogućena.")
@@ -65,6 +42,8 @@ def main():
     finally:
         sensor_manager.stop_acquisition()
         monitor_instance.stop()
+        cam_proc.terminate()
+        cam_proc.join()
 
 if __name__ == "__main__":
     main()

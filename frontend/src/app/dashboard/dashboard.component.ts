@@ -7,25 +7,47 @@ import { DashboardService } from '../services/dashboard.service';
   styleUrls: ['./dashboard.component.css']
 })
 export class DashboardComponent implements OnInit {
-  status: any;
+  status: any = {};
   controlMessage: string = 'No command received...';
+  
+  // Gauge angles (in degrees)
+  steeringAngle: number = 0;
+  motorAngle: number = 0;
 
-  constructor(private dashboardService: DashboardService) {}
+  // Define maximum expected values for mapping gauge angles
+  maxSteering: number = 45; // Assume steering ranges from -45 to +45 degrees
+  maxMotorSpeed: number = 10; // Assume motor speed ranges from 0 to 10 km/h
 
-  ngOnInit() {
-    this.getStatus();
-    // Poll status every second (adjust as needed)
-    setInterval(() => {
-      this.getStatus();
-    }, 1000);
+  constructor(private dashboardService: DashboardService) { }
+
+  ngOnInit(): void {
+    this.fetchStatus();
+    setInterval(() => this.fetchStatus(), 500);
   }
 
-  getStatus() {
+  fetchStatus(): void {
     this.dashboardService.getStatus().subscribe(data => {
       this.status = data;
+      this.updateGauges();
     }, err => {
       console.error('Error fetching status', err);
     });
+  }
+
+  updateGauges(): void {
+    // Update steering gauge:
+    const steering = this.status?.sensor_data?.steering || 0;
+    // Clamp steering to -maxSteering...maxSteering
+    const clampedSteering = Math.max(-this.maxSteering, Math.min(this.maxSteering, steering));
+    // For simplicity, assume that -maxSteering maps to -45deg and +maxSteering maps to 45deg
+    this.steeringAngle = clampedSteering; // Direct mapping
+
+    // Update motor speed gauge:
+    const speed = this.status?.motor_status?.current_speed || 0;
+    // Map speed 0 -> -45deg, maxMotorSpeed -> 45deg
+    let angle = ((speed / this.maxMotorSpeed) * 90) - 45;
+    angle = Math.max(-45, Math.min(45, angle));
+    this.motorAngle = angle;
   }
 
   @HostListener('window:keydown', ['$event'])

@@ -1,27 +1,78 @@
 .dashboard-container {
   padding: 20px;
   font-family: Arial, sans-serif;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
-header {
-  text-align: center;
-  margin-bottom: 20px;
-}
-
-.camera-section, .status-section, .additional-data, .control-section {
-  border: 1px solid #ccc;
-  border-radius: 5px;
+.section {
+  margin-bottom: 30px;
   padding: 15px;
-  margin-bottom: 20px;
+  background: #fff;
+  border-radius: 5px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-.camera-section img {
+.camera-output img {
   max-width: 100%;
   border: 1px solid #ddd;
   border-radius: 5px;
 }
 
-.status-section ul {
-  list-style-type: none;
-  padding-left: 0;
+.cpu-core {
+  margin-bottom: 10px;
+}
+
+.cpu-label {
+  margin-bottom: 4px;
+}
+
+.cpu-bar-container {
+  background: #e9ecef;
+  border-radius: 3px;
+  overflow: hidden;
+  height: 20px;
+}
+
+.cpu-bar {
+  height: 100%;
+  background-color: #28a745; /* green bar */
+  transition: width 0.5s;
+}
+
+/* Gauge styles */
+.gauge-container {
+  text-align: center;
+  margin: 20px auto;
+}
+
+.gauge {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  border: 8px solid #e9ecef;
+  border-radius: 50%;
+  margin: 0 auto;
+}
+
+.gauge-needle {
+  position: absolute;
+  width: 4px;
+  height: 90px;
+  background-color: red;
+  top: 50%;
+  left: 50%;
+  transform-origin: bottom center;
+  transition: transform 0.5s ease-out;
+}
+
+.gauge-label {
+  margin-top: 10px;
+  font-weight: bold;
+}
+
+/* Control section */
+.control-section {
+  text-align: center;
+  font-size: 1.2rem;
 }

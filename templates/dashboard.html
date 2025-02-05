@@ -1,78 +1,180 @@
-{% extends "layout.html" %}
-{% block title %}Brain Dashboard{% endblock %}
-
-{% block content %}
-<section id="camera-section" class="dashboard-section">
-  <h2>Kamera</h2>
-  <div class="camera-output">
-    {% if status.sensor_data.image %}
-      <img src="data:image/jpeg;base64,{{ status.sensor_data.image }}" alt="Camera Output">
-    {% else %}
-      <p>Nema dostupnog izlaza sa kamere.</p>
-    {% endif %}
-  </div>
-</section>
-
-<section id="system-status" class="dashboard-section">
-  <h2>Sistem Status</h2>
-  <div class="status-item">
-    <strong>Brzina Motora:</strong> {{ status.motor_status.current_speed }} km/h
-  </div>
-  <div class="status-item">
-    <strong>Steering:</strong>
-    {% if status.sensor_data.steering is defined %}
-      {{ status.sensor_data.steering }}°
-    {% else %}
-      N/A
-    {% endif %}
-  </div>
-  <div class="status-item">
-    <strong>Napon Baterije:</strong>
-    {% if status.sensor_data.battery_voltage is defined %}
-      {{ status.sensor_data.battery_voltage }} V
-    {% else %}
-      N/A
-    {% endif %}
-  </div>
-  <div class="status-item">
-    <strong>CPU Status:</strong>
-    <ul class="cpu-status-list">
-      {% for usage in status.cpu_status %}
-        <li>Core {{ loop.index }}: {{ usage }}%</li>
-      {% endfor %}
-    </ul>
-  </div>
-</section>
-
-<section id="additional-data" class="dashboard-section">
-  <h2>Ostali Senzorski Podaci</h2>
-  <pre>{{ status.sensor_data | tojson(indent=2) }}</pre>
-</section>
-
-<section id="control-section" class="dashboard-section">
-  <h2>Kontrola</h2>
-  <p class="control-instructions">
-    Koristite tastere <strong>W</strong> (ubrzanje), <strong>S</strong> (kočenje), <strong>A</strong> (skretanje ulevo) i <strong>D</strong> (skretanje udesno).
-  </p>
-  <p id="controlStatus" class="control-status">Nema komandi...</p>
-</section>
-{% endblock %}
-
-{% block scripts %}
-<script>
-  document.addEventListener('keydown', function(event) {
-    const key = event.key.toUpperCase();
-    if (["W", "A", "S", "D"].includes(key)) {
-      document.getElementById('controlStatus').textContent = "Primljena komanda: " + key;
-      fetch('/control', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: key })
-      })
-      .then(response => response.json())
-      .then(data => console.log("Odgovor:", data))
-      .catch(error => console.error("Greška pri slanju komande:", error));
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Brain System Dashboard</title>
+  <!-- Include Bootstrap CSS for basic styling (optional) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      padding: 20px;
+      background-color: #f8f9fa;
     }
-  });
-</script>
-{% endblock %}
+    .dashboard-container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .section {
+      margin-bottom: 30px;
+      padding: 15px;
+      background: #fff;
+      border-radius: 5px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .cpu-core {
+      margin-bottom: 10px;
+    }
+    .cpu-bar {
+      height: 20px;
+      background-color: #28a745;  /* Green bar */
+      border-radius: 3px;
+    }
+    /* Gauge styling for steering and motor speed */
+    .gauge-container {
+      position: relative;
+      width: 200px;
+      height: 100px;
+      margin: 20px auto;
+    }
+    .gauge-background {
+      width: 100%;
+      height: 100%;
+    }
+    .gauge-needle {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      width: 4px;
+      height: 90%;
+      background-color: red;
+      transform-origin: bottom;
+      transition: transform 0.5s ease-out;
+    }
+    .gauge-label {
+      text-align: center;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard-container">
+    <h1 class="text-center mb-4">Brain System Dashboard</h1>
+    
+    <!-- Camera Output Section -->
+    <div class="section" id="camera-section">
+      <h2>Camera</h2>
+      <div class="text-center">
+        <img id="cameraImage" src="" alt="Camera Output" style="max-width:100%; border:1px solid #ddd; border-radius:5px;">
+      </div>
+    </div>
+    
+    <!-- CPU Usage Section -->
+    <div class="section" id="cpu-section">
+      <h2>CPU Core Usage</h2>
+      <div id="cpuContainer"></div>
+    </div>
+    
+    <!-- Steering Gauge Section -->
+    <div class="section" id="steering-section">
+      <h2>Steering Position</h2>
+      <div class="gauge-container" id="steeringGauge">
+        <img src="{{ url_for('static', filename='images/gauge_background.png') }}" alt="Gauge Background" class="gauge-background">
+        <div id="steeringNeedle" class="gauge-needle"></div>
+      </div>
+      <div class="gauge-label" id="steeringLabel">0°</div>
+    </div>
+    
+    <!-- Motor Speed Gauge Section -->
+    <div class="section" id="motor-section">
+      <h2>Motor Speed</h2>
+      <div class="gauge-container" id="motorGauge">
+        <img src="{{ url_for('static', filename='images/gauge_background.png') }}" alt="Gauge Background" class="gauge-background">
+        <div id="motorNeedle" class="gauge-needle"></div>
+      </div>
+      <div class="gauge-label" id="motorLabel">0 km/h</div>
+    </div>
+    
+    <!-- Control Section -->
+    <div class="section" id="control-section">
+      <h2>Control</h2>
+      <p id="controlStatus">No command received...</p>
+      <p>Use W (accelerate), S (decelerate), A (turn left), and D (turn right)</p>
+    </div>
+  </div>
+  
+  <!-- JavaScript to poll the backend and update the UI -->
+  <script>
+    // Poll the /api/status endpoint every 500ms
+    function fetchStatus() {
+      fetch('/api/status')
+        .then(response => response.json())
+        .then(data => {
+          // Update camera image
+          if (data && data.sensor_data && data.sensor_data.image) {
+            document.getElementById('cameraImage').src = "data:image/jpeg;base64," + data.sensor_data.image;
+          }
+          // Update CPU usage bars
+          if (data && data.cpu_status) {
+            const cpuContainer = document.getElementById('cpuContainer');
+            cpuContainer.innerHTML = ""; // Clear previous bars
+            data.cpu_status.forEach((usage, index) => {
+              const coreDiv = document.createElement('div');
+              coreDiv.className = 'cpu-core';
+              coreDiv.innerHTML = `<strong>Core ${index + 1}:</strong> ${usage}%`;
+              const barDiv = document.createElement('div');
+              barDiv.className = 'cpu-bar';
+              barDiv.style.width = usage + "%";
+              coreDiv.appendChild(barDiv);
+              cpuContainer.appendChild(coreDiv);
+            });
+          }
+          // Update steering gauge
+          if (data && data.sensor_data && typeof data.sensor_data.steering !== 'undefined') {
+            const steering = data.sensor_data.steering;
+            document.getElementById('steeringLabel').innerText = steering + "°";
+            // For a simple gauge, assume 0° is at 0deg rotation and maximum is ±45°
+            // Map steering angle to needle rotation (clamp between -45 and 45 degrees)
+            const clamped = Math.max(-45, Math.min(45, steering));
+            // Set needle rotation (rotate by clamped value; adjust if your gauge image differs)
+            document.getElementById('steeringNeedle').style.transform = "rotate(" + clamped + "deg)";
+          }
+          // Update motor speed gauge
+          if (data && data.motor_status && typeof data.motor_status.current_speed !== 'undefined') {
+            const speed = data.motor_status.current_speed;
+            document.getElementById('motorLabel').innerText = speed + " km/h";
+            // Assume 0 km/h corresponds to -45° and max_speed corresponds to 45°
+            // For this example, assume max_speed is 10 km/h
+            const max_speed = 10;
+            let angle = ((speed / max_speed) * 90) - 45; // maps 0->-45, max->45
+            angle = Math.max(-45, Math.min(45, angle));
+            document.getElementById('motorNeedle').style.transform = "rotate(" + angle + "deg)";
+          }
+        })
+        .catch(error => console.error("Error fetching status:", error));
+    }
+    
+    fetchStatus();
+    setInterval(fetchStatus, 500);
+    
+    // Listen for keyboard events and send commands to /control endpoint
+    document.addEventListener('keydown', function(event) {
+      const key = event.key.toUpperCase();
+      if (["W", "A", "S", "D"].includes(key)) {
+        document.getElementById('controlStatus').innerText = "Received command: " + key;
+        fetch('/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: key })
+        })
+        .then(response => response.json())
+        .then(data => console.log("Control response:", data))
+        .catch(error => console.error("Error sending control command:", error));
+      }
+    });
+  </script>
+  
+  <!-- Optionally include Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
