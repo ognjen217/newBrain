@@ -24,7 +24,7 @@ class MotorControl:
             self.current_speed = self.max_speed
         self.logger.info("Accelerating: current speed = %s", self.current_speed)
         if self.nucleo_comm:
-            self.nucleo_comm.send_command(f"SET_SPEED {self.current_speed}")
+            self.nucleo_comm.send_command(f"SPEED:{self.current_speed}")
 
     def decelerate(self):
         if self.current_speed - self.deceleration_step >= self.min_speed:
@@ -33,12 +33,12 @@ class MotorControl:
             self.current_speed = self.min_speed
         self.logger.info("Decelerating: current speed = %s", self.current_speed)
         if self.nucleo_comm:
-            self.nucleo_comm.send_command(f"SET_SPEED {self.current_speed}")
+            self.nucleo_comm.send_command(f"SPEED:{self.current_speed}")
 
     def maintain_speed(self):
         self.logger.info("Maintaining speed: %s", self.current_speed)
         if self.nucleo_comm:
-            self.nucleo_comm.send_command(f"MAINTAIN_SPEED {self.current_speed}")
+            self.nucleo_comm.send_command(f"MAINTAIN:{self.current_speed}")
 
     def stop(self):
         self.current_speed = 0
@@ -55,4 +55,5 @@ class MotorControl:
             self.current_speed = speed
         self.logger.info("Speed set to: %s", self.current_speed)
         if self.nucleo_comm:
-            self.nucleo_comm.send_command(f"SET_SPEED {self.current_speed}")
+            self.nucleo_comm.send_command(f"SPEED:{self.current_speed}")
+

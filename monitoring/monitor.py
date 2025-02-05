@@ -26,10 +26,7 @@ class Monitor:
     def get_system_status(self):
         sensor_data = self.sensor_manager.get_latest_data() if self.sensor_manager else {}
         motor_status = {"current_speed": self.motor_control.current_speed} if self.motor_control else {}
-        if self.nucleo_comm and getattr(self.nucleo_comm, "connection", None):
-            nucleo_status = {"status": "connected"}
-        else:
-            nucleo_status = {"status": "disconnected"}
+        nucleo_status = {"status": "connected"} if (self.nucleo_comm and getattr(self.nucleo_comm, "connection", None)) else {"status": "disconnected"}
         cpu_status = psutil.cpu_percent(interval=None, percpu=True)
         status = {
             "sensor_data": sensor_data,
@@ -38,6 +35,16 @@ class Monitor:
             "cpu_status": cpu_status
         }
         return status
+
+    def log_system_status(self):
+        status = self.get_system_status()
+        # If sensor_data has a large "image" field, truncate it before logging
+        sensor_data = status.get("sensor_data", {})
+        image_str = sensor_data.get("image", "")
+        if image_str and isinstance(image_str, str):
+            sensor_data["image"] = image_str[:50] + "..."  # Only show the first 50 characters
+        self.logger.info("System status: %s", status)
+
 
     def monitor_loop(self):
         self.logger.info("Starting monitor loop.")

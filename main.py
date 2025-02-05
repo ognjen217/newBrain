@@ -1,6 +1,6 @@
-import logging
+#!/usr/bin/env python3
 import time
-from multiprocessing import Process
+import logging
 from config import config
 from firmware.nucleo_comm import NucleoComm
 from firmware.motor_control import MotorControl
@@ -11,19 +11,20 @@ def main():
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
     logger = logging.getLogger("Main")
-    logger.info("Pokretanje Brain sistema...")
+    logger.info("Starting Brain system...")
 
     config_data = config.load_config()
 
-    # Start separate camera process pinned to a specific core (e.g., core 3)
-    from firmware.camera_process import camera_process  # assume you put the above function in camera_process.py
-    cam_proc = Process(target=camera_process, args=(config_data, 3))
-    cam_proc.start()
-
-    # Initialize other components as before
+    # Instantiate Nucleo communication using the correct serial port
     nucleo = NucleoComm(config_data.get("nucleo", {}))
+    
+    # Create MotorControl with the NucleoComm instance
     motor_control = MotorControl(config_data.get("motors", {}), nucleo_comm=nucleo)
+    
+    # Initialize SensorManager (for camera and other sensor data)
     sensor_manager = SensorManager(config_data.get("sensors", {}))
+    
+    # Create and start the Monitor (for status and dashboard)
     monitor_instance = Monitor(sensor_manager, motor_control, nucleo, config_data.get("monitor_interval", 1.0))
     monitor_instance.start()
 
@@ -32,18 +33,16 @@ def main():
         dashboard_port = config_data.get("dashboard_port", 5000)
         dashboard = DashboardServer(monitor_instance, host=dashboard_host, port=dashboard_port)
         dashboard.start()
-        logger.info("Dashboard integracija je omogućena.")
+        logger.info("Dashboard integration enabled.")
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        logger.info("Prekid od strane korisnika. Gašenje sistema...")
+        logger.info("Keyboard interrupt received. Shutting down...")
     finally:
         sensor_manager.stop_acquisition()
         monitor_instance.stop()
-        cam_proc.terminate()
-        cam_proc.join()
 
 if __name__ == "__main__":
     main()
