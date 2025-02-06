@@ -13,12 +13,14 @@ class SensorManager:
 
     def initialize_camera(self):
         try:
+            self.logger.info("Initializing Picamera2...")
             self.picam2 = Picamera2()
-            # Create a still configuration at 640x480 resolution (adjust as needed)
+            # Configure for a 640x480 still image (adjust as needed)
             still_config = self.picam2.create_still_configuration(main={"size": (640, 480)})
             self.picam2.configure(still_config)
             self.picam2.start()
-            time.sleep(2)  # Allow time for the camera to warm up
+            # Allow time for the camera to warm up
+            time.sleep(2)
             self.logger.info("Picamera2 initialized successfully.")
         except Exception as e:
             self.logger.error("Error initializing Picamera2: %s", e)
@@ -31,14 +33,14 @@ class SensorManager:
         try:
             # Capture the image as a numpy array
             image = self.picam2.capture_array()
-            # Convert BGR to RGB if necessary (adjust if your image is already in the right order)
+            # Convert from BGR to RGB (if necessary)
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            # Encode image as JPEG
+            # Encode the image as JPEG
             ret, jpeg = cv2.imencode('.jpg', image_rgb)
             if not ret:
                 self.logger.error("Failed to encode image.")
                 return None
-            # Convert the JPEG to a Base64 string
+            # Convert the JPEG to a Base64 string for the web dashboard
             encoded = base64.b64encode(jpeg).decode('utf-8')
             return encoded
         except Exception as e:
@@ -46,14 +48,20 @@ class SensorManager:
             return None
 
     def get_latest_data(self):
-        # Get a current image (or you might cache and update this at a fixed interval)
         image = self.capture_image()
-        # Return all sensor data in a dictionary (adjust as needed)
         return {
             "acceleration": [0, 0, 0],
             "gyro": [0, 0, 0],
             "speed": 0,
             "steering": 0,
             "battery_voltage": 0,
-            "image": "printed"
+            "image": image
         }
+        
+    def stop_acquisition(self):
+        if self.picam2:
+            try:
+                self.picam2.stop()
+                self.logger.info("Picamera2 stopped successfully.")
+            except Exception as e:
+                self.logger.error("Error stopping Picamera2: %s", e)

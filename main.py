@@ -15,16 +15,9 @@ def main():
 
     config_data = config.load_config()
 
-    # Instantiate Nucleo communication using the correct serial port
     nucleo = NucleoComm(config_data.get("nucleo", {}))
-    
-    # Create MotorControl with the NucleoComm instance
     motor_control = MotorControl(config_data.get("motors", {}), nucleo_comm=nucleo)
-    
-    # Initialize SensorManager (for camera and other sensor data)
     sensor_manager = SensorManager(config_data.get("sensors", {}))
-    
-    # Create and start the Monitor (for status and dashboard)
     monitor_instance = Monitor(sensor_manager, motor_control, nucleo, config_data.get("monitor_interval", 1.0))
     monitor_instance.start()
 

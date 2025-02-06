@@ -15,14 +15,14 @@ export class DashboardComponent implements OnInit {
   motorAngle: number = 0;
 
   // Define maximum expected values for mapping gauge angles
-  maxSteering: number = 45; // Assume steering ranges from -45 to +45 degrees
+  maxSteering: number = 25; // Assume steering ranges from -45 to +45 degrees
   maxMotorSpeed: number = 10; // Assume motor speed ranges from 0 to 10 km/h
 
   constructor(private dashboardService: DashboardService) { }
 
   ngOnInit(): void {
     this.fetchStatus();
-    setInterval(() => this.fetchStatus(), 500);
+    setInterval(() => this.fetchStatus(), 10);
   }
 
   fetchStatus(): void {
@@ -46,7 +46,7 @@ export class DashboardComponent implements OnInit {
     const speed = this.status?.motor_status?.current_speed || 0;
     // Map speed 0 -> -45deg, maxMotorSpeed -> 45deg
     let angle = ((speed / this.maxMotorSpeed) * 90) - 45;
-    angle = Math.max(-45, Math.min(45, angle));
+    angle = Math.max(-25, Math.min(25, angle));
     this.motorAngle = angle;
   }
 

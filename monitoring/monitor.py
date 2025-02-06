@@ -39,11 +39,11 @@ class Monitor:
     def log_system_status(self):
         status = self.get_system_status()
         # If sensor_data has a large "image" field, truncate it before logging
-        sensor_data = status.get("sensor_data", {})
-        image_str = sensor_data.get("image", "")
-        if image_str and isinstance(image_str, str):
+        sensor_data = status.get("sensor_data", {}).copy()
+        image_str = sensor_data.get("image")
+        if image_str and isinstance(image_str, str) and len(image_str)>550:
             sensor_data["image"] = image_str[:50] + "..."  # Only show the first 50 characters
-        self.logger.info("System status: %s", status)
+        self.logger.info("System status: %s", {**status,"sensor_data":sensor_data})
 
 
     def monitor_loop(self):
@@ -51,7 +51,7 @@ class Monitor:
         self.running = True
         while self.running:
             status = self.get_system_status()
-            self.logger.info("System status: %s", status)
+            self.log_system_status()
             time.sleep(self.monitor_interval)
 
     def start(self):
