@@ -7,57 +7,73 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body {
-      padding: 20px;
-      background-color: #f8f9fa;
+      font-family: sans-serif;
+      margin: 20px;
+      background: #f2f2f2;
     }
-    .dashboard-container {
-      max-width: 900px;
-      margin: 0 auto;
-    }
-    .section {
-      margin-bottom: 30px;
-      padding: 15px;
-      background: #fff;
-      border-radius: 5px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .cpu-core {
-      margin-bottom: 10px;
-    }
-    .cpu-bar {
-      height: 20px;
-      background-color: #28a745;  /* Green bar */
-      border-radius: 3px;
-    }
-    /* Gauge styling for steering and motor speed */
-    .gauge-container {
-      position: relative;
-      width: 200px;
-      height: 100px;
-      margin: 20px auto;
-    }
-    .gauge-background {
-      width: 100%;
-      height: 100%;
-    }
-    .gauge-needle {
-      position: absolute;
-      bottom: 0;
-      left: 50%;
-      width: 4px;
-      height: 90%;
-      background-color: red;
-      transform-origin: bottom;
-      transition: transform 0.5s ease-out;
-    }
-    .gauge-label {
+    h1 {
+      color: #333;
       text-align: center;
-      margin-top: 10px;
+    }
+    .slider-container {
+      margin: 0 auto;
+      width: 300px;
+      text-align: center;
+    }
+    .value-label {
+      display: inline-block;
+      margin-left: 8px;
       font-weight: bold;
+    }
+    .info-box {
+      background: white;
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 4px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
     }
   </style>
 </head>
 <body>
+  <h1>Autić - KL Value</h1>
+  <div class="slider-container">
+    <label for="klSlider">KL Mode (0,15,30):</label><br>
+    <input type="range" id="klSlider" name="klSlider" min="0" max="30" step="15" value="0">
+    <span id="klValue" class="value-label">0</span>
+
+    <div class="info-box">
+      <p>Podesite vrijednost KL (0 - isključeno, 15 - poluaktivno, 30 - potpuno aktivno).</p>
+      <p>Promjena automatski šalje zahtjev prema backendu.</p>
+    </div>
+  </div>
+
+  <script>
+    const klSlider = document.getElementById('klSlider');
+    const klValueSpan = document.getElementById('klValue');
+
+    // Kad se klizač pomakne, ažuriraj broj
+    klSlider.addEventListener('input', function() {
+      klValueSpan.textContent = klSlider.value;
+    });
+
+    // Kad korisnik pusti klizač, pošalji POST zahtjev na backend
+    klSlider.addEventListener('change', function() {
+      const klVal = klSlider.value; // "0","15","30"
+      fetch('/setKlValue', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ kl_value: klVal })
+      }).then(response => {
+        if(!response.ok){
+          console.error("Greška pri slanju KL value", response.status);
+        } else {
+          console.log("KL postavljen na", klVal);
+        }
+      }).catch(err => {
+        console.error("Greška:", err);
+      });
+    });
+  </script>
   <div class="dashboard-container">
     <h1 class="text-center mb-4">Brain System Dashboard</h1>
     

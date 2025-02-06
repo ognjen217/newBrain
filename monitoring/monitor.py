@@ -13,7 +13,7 @@ import logging
 import os
 import psutil
 from flask import Flask, jsonify, render_template, request
-
+from firmware.nucleo_comm import NucleoComm
 class Monitor:
     def __init__(self, sensor_manager, motor_control, nucleo_comm, monitor_interval=1.0):
         self.sensor_manager = sensor_manager
@@ -115,3 +115,33 @@ class DashboardServer:
             self.app.run(host=self.host, port=self.port, debug=False, use_reloader=False)
         self.dashboard_thread = threading.Thread(target=run_flask, name="DashboardThread", daemon=True)
         self.dashboard_thread.start()
+
+
+    app = Flask(__name__)
+    nucleo_config = {"port": "/dev/ttyACM0", "baudrate": 115200}
+    nucleo_comm = NucleoComm(nucleo_config)  # inicijaliziramo serijski handler
+
+    @app.route('/')
+    def index():
+        # Prikazi index.html sa sliderom
+        return render_template('index.html')
+
+    @app.route('/setKlValue', methods=['POST'])
+    def set_kl_value():
+        data = request.get_json()  # { "kl_value": "15" }
+        kl_val_str = data.get("kl_value", "0")
+        kl_val = int(kl_val_str)   # pretvorimo u int
+
+        # Generiramo komandu #kl:15;;\r\n (ili 0 ili 30) i šaljemo je
+        from firmware.message_converter import MessageConverter
+        converter = MessageConverter()
+        cmd = converter.get_command("kl", mode=kl_val)  # => "#kl:15;;\r\n"
+
+        if cmd != "error":
+            nucleo_comm.send_command(cmd)  # posalji Nucleu
+            return jsonify({"status": "ok", "sent_cmd": cmd})
+        else:
+            return jsonify({"status": "error", "message": "Invalid kl command"}), 400
+
+    if __name__ == '__main__':
+        app.run(debug=True, host='0.0.0.0')

@@ -158,6 +158,11 @@ def map_key_to_command(key):
         return converter.get_command("steer", steerAngle=-25)
     elif key.upper() == 'D':
         return converter.get_command("steer", steerAngle=25)
+    elif key.upper() in ['KL0', 'KL15', 'KL30']:
+        # kl: <broj> -> int
+        val_str = key.upper().replace("KL", "")  # "0","15","30"
+        kl_val = int(val_str)
+        return converter.get_command("kl", mode=kl_val)
     else:
         return None
 
@@ -398,3 +403,4 @@ class SerialHandler:
         if self.serial and self.serial.is_open:
             self.serial.close()
             self.logger.info("Serial port closed.")
+
