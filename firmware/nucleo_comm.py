@@ -8,6 +8,7 @@ from firmware.message_converter import MessageConverter
 class NucleoComm:
     def __init__(self, config):
         """
+        Inicijalizira komunikaciju s Nucleom.
         config je dict s ključevima 'port' i 'baudrate'
         """
         self.logger = logging.getLogger("NucleoComm")
@@ -31,11 +32,11 @@ class NucleoComm:
 
     def send_key_command(self, key):
         """
-        Mapira tipke W, A, S, D u BFMC komande:
-          W -> "#speed:100;;\r\n"
-          S -> "#speed:-100;;\r\n"
-          A -> "#steer:-25;;\r\n"
-          D -> "#steer:25;;\r\n"
+        Mapira tipke:
+          W → "#speed:100;;\r\n"
+          S → "#speed:-100;;\r\n"
+          A → "#steer:-25;;\r\n"
+          D → "#steer:25;;\r\n"
         """
         cmd = None
         if key.upper() == 'W':
@@ -47,7 +48,7 @@ class NucleoComm:
         elif key.upper() == 'D':
             cmd = self.converter.get_command("steer", steerAngle=25)
         else:
-            self.logger.error("Invalid key: %s", key)
+            self.logger.error("Invalid key command: %s", key)
             return
 
         if cmd != "error":
@@ -58,7 +59,7 @@ class NucleoComm:
 
     def send_kl_command(self, kl_value):
         """
-        Generira komandu za KL – očekivane vrijednosti: 0, 15, 30.
+        Generira i šalje komandu za KL – očekivane vrijednosti: 0, 15, 30.
         Primjer: kl_value=15 → "#kl:15;;\r\n"
         """
         cmd = self.converter.get_command("kl", mode=kl_value)
@@ -71,8 +72,7 @@ class NucleoComm:
     def get_received_messages(self):
         if self.serial_handler:
             return self.serial_handler.get_messages()
-        else:
-            return []
+        return []
 
     def close(self):
         if self.serial_handler:

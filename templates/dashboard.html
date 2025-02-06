@@ -2,195 +2,133 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Brain System Dashboard</title>
-  <!-- Include Bootstrap CSS for basic styling (optional) -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <title>Autić Dashboard</title>
+  <!-- Link na Bosch-ov prilagođeni CSS (kopiran ili prilagođen) -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bosch-dashboard.css') }}">
+  <!-- Također možeš zadržati Bootstrap ukoliko želiš kombinirati -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
   <style>
+    /* Ako nemaš bosch-dashboard.css, ovdje dodaj nekoliko primjera stilova koji mogu poboljšati izgled */
     body {
-      font-family: sans-serif;
-      margin: 20px;
-      background: #f2f2f2;
+      background-color: #1f1f1f;
+      color: #eee;
+      font-family: 'Roboto', sans-serif;
     }
-    h1 {
-      color: #333;
+    .video-feed {
+      margin-bottom: 20px;
+      border: 2px solid #444;
+      box-shadow: 0 0 10px rgba(0,0,0,0.8);
+    }
+    .control-panel {
+      margin: 20px auto;
       text-align: center;
+      background-color: #2c2c2c;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    }
+    .key-btn {
+      margin: 10px;
+      width: 80px;
+      height: 80px;
+      font-size: 28px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #3a3a3a, #262626);
+      color: #fff;
+      border: none;
+      outline: none;
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+      transition: transform 0.1s ease;
+    }
+    .key-btn:active {
+      transform: scale(0.95);
     }
     .slider-container {
-      margin: 0 auto;
+      margin: 20px auto;
       width: 300px;
-      text-align: center;
     }
-    .value-label {
-      display: inline-block;
-      margin-left: 8px;
-      font-weight: bold;
-    }
-    .info-box {
-      background: white;
-      padding: 10px;
-      margin-top: 10px;
-      border-radius: 4px;
-      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    #klValue {
+      font-size: 1.5rem;
+      margin-left: 10px;
     }
   </style>
 </head>
 <body>
-  <h1>Autić - KL Value</h1>
-  <div class="slider-container">
-    <label for="klSlider">KL Mode (0,15,30):</label><br>
-    <input type="range" id="klSlider" name="klSlider" min="0" max="30" step="15" value="0">
-    <span id="klValue" class="value-label">0</span>
-
-    <div class="info-box">
-      <p>Podesite vrijednost KL (0 - isključeno, 15 - poluaktivno, 30 - potpuno aktivno).</p>
-      <p>Promjena automatski šalje zahtjev prema backendu.</p>
+  <div class="container">
+    <!-- Video feed – zadrži originalni kod koji ti radi, ovdje je primjer -->
+    <div class="video-feed">
+      <video width="100%" controls autoplay muted>
+        <source src="{{ url_for('static', filename='video/sample.mp4') }}" type="video/mp4">
+        Vaš pretraživač ne podržava HTML5 video.
+      </video>
+    </div>
+    
+    <!-- Kontrolna ploča za upravljanje -->
+    <div class="control-panel">
+      <h3>Upravljanje Vozilom</h3>
+      <div>
+        <button class="btn key-btn" data-key="W">W</button>
+      </div>
+      <div>
+        <button class="btn key-btn" data-key="A">A</button>
+        <button class="btn key-btn" data-key="S">S</button>
+        <button class="btn key-btn" data-key="D">D</button>
+      </div>
+      <!-- Slider za KL (0, 15, 30) -->
+      <div class="slider-container">
+        <label for="klSlider">KL (Core mode): </label>
+        <input type="range" class="custom-range" id="klSlider" min="0" max="30" step="15" value="0">
+        <span id="klValue" class="badge badge-info">0</span>
+      </div>
     </div>
   </div>
-
+  
+  <!-- Uključi jQuery, Bootstrap JS i Bosch-ov prilagođeni JS (ako postoji) -->
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  <script src="{{ url_for('static', filename='js/bosch-dashboard.js') }}"></script>
   <script>
-    const klSlider = document.getElementById('klSlider');
-    const klValueSpan = document.getElementById('klValue');
-
-    // Kad se klizač pomakne, ažuriraj broj
-    klSlider.addEventListener('input', function() {
-      klValueSpan.textContent = klSlider.value;
-    });
-
-    // Kad korisnik pusti klizač, pošalji POST zahtjev na backend
-    klSlider.addEventListener('change', function() {
-      const klVal = klSlider.value; // "0","15","30"
-      fetch('/setKlValue', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ kl_value: klVal })
-      }).then(response => {
-        if(!response.ok){
-          console.error("Greška pri slanju KL value", response.status);
-        } else {
-          console.log("KL postavljen na", klVal);
-        }
-      }).catch(err => {
-        console.error("Greška:", err);
+    $(document).ready(function(){
+      // Tipke za upravljanje
+      $('.key-btn').click(function(){
+        var key = $(this).data('key');
+        console.log("Pritisnuta tipka:", key);
+        $.ajax({
+          url: '/sendKey',
+          method: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ key: key }),
+          success: function(response){
+            console.log("Odgovor od sendKey:", response);
+          },
+          error: function(err){
+            console.error("Greška kod slanja tipke:", err);
+          }
+        });
+      });
+      
+      // Slider za KL – ažuriranje prikaza vrijednosti
+      $('#klSlider').on('input', function(){
+        $('#klValue').text($(this).val());
+      });
+      
+      $('#klSlider').on('change', function(){
+        var klVal = $(this).val();
+        console.log("Promijenjena KL vrijednost:", klVal);
+        $.ajax({
+          url: '/setKlValue',
+          method: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ kl_value: klVal }),
+          success: function(response){
+            console.log("Odgovor od setKlValue:", response);
+          },
+          error: function(err){
+            console.error("Greška kod slanja KL vrijednosti:", err);
+          }
+        });
       });
     });
   </script>
-  <div class="dashboard-container">
-    <h1 class="text-center mb-4">Brain System Dashboard</h1>
-    
-    <!-- Camera Output Section -->
-    <div class="section" id="camera-section">
-      <h2>Camera</h2>
-      <div class="text-center">
-        <img id="cameraImage" src="" alt="Camera Output" style="max-width:100%; border:1px solid #ddd; border-radius:5px;">
-      </div>
-    </div>
-    
-    <!-- CPU Usage Section -->
-    <div class="section" id="cpu-section">
-      <h2>CPU Core Usage</h2>
-      <div id="cpuContainer"></div>
-    </div>
-    
-    <!-- Steering Gauge Section -->
-    <div class="section" id="steering-section">
-      <h2>Steering Position</h2>
-      <div class="gauge-container" id="steeringGauge">
-        <img src="{{ url_for('static', filename='images/gauge_background.png') }}" alt="Gauge Background" class="gauge-background">
-        <div id="steeringNeedle" class="gauge-needle"></div>
-      </div>
-      <div class="gauge-label" id="steeringLabel">0°</div>
-    </div>
-    
-    <!-- Motor Speed Gauge Section -->
-    <div class="section" id="motor-section">
-      <h2>Motor Speed</h2>
-      <div class="gauge-container" id="motorGauge">
-        <img src="{{ url_for('static', filename='images/gauge_background.png') }}" alt="Gauge Background" class="gauge-background">
-        <div id="motorNeedle" class="gauge-needle"></div>
-      </div>
-      <div class="gauge-label" id="motorLabel">0 km/h</div>
-    </div>
-    
-    <!-- Control Section -->
-    <div class="section" id="control-section">
-      <h2>Control</h2>
-      <p id="controlStatus">No command received...</p>
-      <p>Use W (accelerate), S (decelerate), A (turn left), and D (turn right)</p>
-    </div>
-  </div>
-  
-  <!-- JavaScript to poll the backend and update the UI -->
-  <script>
-    // Poll the /api/status endpoint every 500ms
-    function fetchStatus() {
-      fetch('/api/status')
-        .then(response => response.json())
-        .then(data => {
-          // Update camera image
-          if (data && data.sensor_data && data.sensor_data.image) {
-            document.getElementById('cameraImage').src = "data:image/jpeg;base64," + data.sensor_data.image;
-          }
-          // Update CPU usage bars
-          if (data && data.cpu_status) {
-            const cpuContainer = document.getElementById('cpuContainer');
-            cpuContainer.innerHTML = ""; // Clear previous bars
-            data.cpu_status.forEach((usage, index) => {
-              const coreDiv = document.createElement('div');
-              coreDiv.className = 'cpu-core';
-              coreDiv.innerHTML = `<strong>Core ${index + 1}:</strong> ${usage}%`;
-              const barDiv = document.createElement('div');
-              barDiv.className = 'cpu-bar';
-              barDiv.style.width = usage + "%";
-              coreDiv.appendChild(barDiv);
-              cpuContainer.appendChild(coreDiv);
-            });
-          }
-          // Update steering gauge
-          if (data && data.sensor_data && typeof data.sensor_data.steering !== 'undefined') {
-            const steering = data.sensor_data.steering;
-            document.getElementById('steeringLabel').innerText = steering + "°";
-            // For a simple gauge, assume 0° is at 0deg rotation and maximum is ±45°
-            // Map steering angle to needle rotation (clamp between -45 and 45 degrees)
-            const clamped = Math.max(-45, Math.min(45, steering));
-            // Set needle rotation (rotate by clamped value; adjust if your gauge image differs)
-            document.getElementById('steeringNeedle').style.transform = "rotate(" + clamped + "deg)";
-          }
-          // Update motor speed gauge
-          if (data && data.motor_status && typeof data.motor_status.current_speed !== 'undefined') {
-            const speed = data.motor_status.current_speed;
-            document.getElementById('motorLabel').innerText = speed + " km/h";
-            // Assume 0 km/h corresponds to -45° and max_speed corresponds to 45°
-            // For this example, assume max_speed is 10 km/h
-            const max_speed = 10;
-            let angle = ((speed / max_speed) * 90) - 45; // maps 0->-45, max->45
-            angle = Math.max(-45, Math.min(45, angle));
-            document.getElementById('motorNeedle').style.transform = "rotate(" + angle + "deg)";
-          }
-        })
-        .catch(error => console.error("Error fetching status:", error));
-    }
-    
-    fetchStatus();
-    setInterval(fetchStatus, 10);
-    
-    // Listen for keyboard events and send commands to /control endpoint
-    document.addEventListener('keydown', function(event) {
-      const key = event.key.toUpperCase();
-      if (["W", "A", "S", "D"].includes(key)) {
-        document.getElementById('controlStatus').innerText = "Received command: " + key;
-        fetch('/control', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ command: key })
-        })
-        .then(response => response.json())
-        .then(data => console.log("Control response:", data))
-        .catch(error => console.error("Error sending control command:", error));
-      }
-    });
-  </script>
-  
-  <!-- Optionally include Bootstrap JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

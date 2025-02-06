@@ -1,5 +1,4 @@
 # firmware/threads/threadRead.py
-
 import threading
 import time
 
@@ -20,15 +19,13 @@ class ThreadRead(threading.Thread):
                 if self.serial.in_waiting:
                     data = self.serial.read(self.serial.in_waiting)
                     self.buffer += data
-                    # Dok god se u bufferu nalazi terminator, izvuci kompletne poruke
+                    # Dok se u bufferu pojavljuje terminator, izvući kompletne poruke
                     while self.terminator in self.buffer:
                         index = self.buffer.index(self.terminator)
-                        # Odvoji poruku
-                        raw_line = self.buffer[:index].decode('utf-8', errors='ignore').strip()
+                        line = self.buffer[:index].decode('utf-8', errors='ignore').strip()
                         self.buffer = self.buffer[index + len(self.terminator):]
-                        # Ovdje možeš dodati dodatnu parsiranje ako je potrebno (npr. prepoznati akciju)
-                        self.rx_queue.put(raw_line)
-                        self.logger.debug("Received message: %s", raw_line)
+                        self.rx_queue.put(line)
+                        self.logger.debug("Received message: %s", line)
                 else:
                     time.sleep(0.01)
             except Exception as e:

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Brain Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>Brain Dashboard</h1>
+  </header>
+  <nav>
+    <ul>
+      <li><a href="#" id="manual-control-tab">Manual Control</a></li>
+      <li><a href="#" id="logs-tab">Logs</a></li>
+    </ul>
+  </nav>
+  <main>
+    <!-- Sekcija za manuelnu kontrolu -->
+    <section id="manual-control">
+      <h2>Manual Control</h2>
+      <div class="controls">
+        <button data-command="W">Forward (W)</button>
+        <button data-command="A">Left (A)</button>
+        <button data-command="S">Backward (S)</button>
+        <button data-command="D">Right (D)</button>
+      </div>
+      <div class="kl-control">
+        <label for="kl-input">KL Vrijednost:</label>
+        <input type="number" id="kl-input" min="0" max="100" value="50">
+        <button id="kl-update-btn">Ažuriraj KL</button>
+      </div>
+      <div id="status"></div>
+    </section>
+    
+    <!-- Sekcija za prikaz logova -->
+    <section id="logs" style="display: none;">
+      <h2>Event Logs</h2>
+      <div id="log-container"></div>
+    </section>
+  </main>
+  <script src="dashboard.js"></script>
+</body>
+</html>
