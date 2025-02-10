@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8">
+  <title>BFMC Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
+    #videoFeed { width: 640px; height: 480px; background: #000; margin: 20px auto; }
+    #telemetry { margin-top: 20px; }
+    table { margin: 0 auto; border-collapse: collapse; }
+    td, th { border: 1px solid #ccc; padding: 8px; }
+  </style>
+</head>
+<body>
+  <h1>BFMC Dashboard</h1>
+  <!-- Video feed – slika koja se osvežava -->
+  <div id="videoFeed">
+    <img id="cameraFeed" src="latest.jpg" alt="Video feed" width="640" height="480">
+  </div>
+  <!-- Telemetrija -->
+  <div id="telemetry">
+    <h3>Telemetrija</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Parametar</th>
+          <th>Vrednost</th>
+        </tr>
+      </thead>
+      <tbody id="telemetryTable">
+        <tr><td>Motor Speed</td><td id="motorSpeed">-</td></tr>
+        <tr><td>Steering Angle</td><td id="steeringAngle">-</td></tr>
+        <tr><td>Komanda</td><td id="command">-</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>

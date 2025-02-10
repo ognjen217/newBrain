@@ -1,0 +1,6 @@
+{
+  "nucleo": {
+    "port": "/dev/ttyACM0",
+    "baudRate": 115200
+  }
+}

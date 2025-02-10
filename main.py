@@ -1,41 +1,79 @@
 #!/usr/bin/env python3
 import time
+from multiprocessing import Queue, Event
 import logging
-from config import config
-from firmware.nucleo_comm import NucleoComm
-from firmware.motor_control import MotorControl
-from firmware.sensor_manager import SensorManager
-from monitoring.monitor import Monitor, DashboardServer
 
-def main():
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
-    logger = logging.getLogger("Main")
-    logger.info("Starting Brain system...")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("Main")
 
-    config_data = config.load_config()
+# Zastavice za pokretanje procesa
+DASHBOARD = True
+CAMERA = True
+SERIAL_HANDLER = True
 
-    nucleo = NucleoComm(config_data.get("nucleo", {}))
-    motor_control = MotorControl(config_data.get("motors", {}), nucleo_comm=nucleo)
-    sensor_manager = SensorManager(config_data.get("sensors", {}))
-    monitor_instance = Monitor(sensor_manager, motor_control, nucleo, config_data.get("monitor_interval", 1.0))
-    monitor_instance.start()
+# Kreiramo međuprocesne queue-e
+queueList = {
+    "Critical": Queue(),
+    "Warning": Queue(),
+    "General": Queue(),  # Ovaj queue se koristi za tastaturu i telemetriju
+    "Config": Queue(),
+}
 
-    if config_data.get("dashboard_enabled", False):
-        dashboard_host = config_data.get("dashboard_host", "0.0.0.0")
-        dashboard_port = config_data.get("dashboard_port", 5000)
-        dashboard = DashboardServer(monitor_instance, host=dashboard_host, port=dashboard_port)
-        dashboard.start()
-        logger.info("Dashboard integration enabled.")
+allProcesses = []
 
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received. Shutting down...")
-    finally:
-        sensor_manager.stop_acquisition()
-        monitor_instance.stop()
+# ---------------------- Gateway proces ----------------------
+from firmware.processGateway import processGateway
+gatewayProc = processGateway(queueList, logger)
+gatewayProc.start()
+logger.info("Gateway proces pokrenut.")
 
-if __name__ == "__main__":
-    main()
+# ---------------------- Zamena IP adrese ----------------------
+from utils.ipManager.IpReplacement import IPManager
+# Ako fajl ne postoji, ovaj modul će ispisati upozorenje.
+ipChanger = IPManager('./utils/ipManager/web-socket.service.ts')
+ipChanger.replace_ip_in_file()
+
+# ---------------------- Dashboard proces ----------------------
+if DASHBOARD:
+    from frontend.processDashboard import processDashboard
+    dashboardProc = processDashboard(queueList, logger, debugging=False)
+    allProcesses.append(dashboardProc)
+
+# ---------------------- Kamera proces ----------------------
+if CAMERA:
+    from camera.processCamera import processCamera
+    cameraProc = processCamera(queueList, logger, debugging=False)
+    allProcesses.append(cameraProc)
+
+# ---------------------- SerialHandler proces ----------------------
+if SERIAL_HANDLER:
+    from firmware.processSerialHandler import processSerialHandler
+    serialProc = processSerialHandler(queueList, logger, debugging=False)
+    allProcesses.append(serialProc)
+
+# ---------------------- Tastatura proces ----------------------
+
+# Pokrećemo sve procese; WorkerProcess klase već postavljaju daemon u __init__
+for proc in allProcesses:
+    proc.start()
+
+time.sleep(1)
+print("""
+---------------------------------
+   BFMC SYSTEM – Vozilo spremno!
+   (Pritisni Ctrl+C za prekid)
+---------------------------------
+""")
+
+blocker = Event()
+try:
+    blocker.wait()
+except KeyboardInterrupt:
+    print("\nPrekid (Ctrl+C). Zaustavljam procese...")
+    for proc in reversed(allProcesses):
+        if hasattr(proc, 'stop'):
+            proc.stop()
+        logger.info("Proces zaustavljen: %s", proc)
+    if hasattr(gatewayProc, 'stop'):
+        gatewayProc.stop()
+    print("Gateway proces zaustavljen.")
