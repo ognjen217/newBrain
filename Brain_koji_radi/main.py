@@ -40,30 +40,32 @@
 #       if needed: npm audit fix
 #
 # ===================================== GENERAL IMPORTS ==================================
+#!/usr/bin/env python3
+
+#!/usr/bin/env python3
+"""
+Refaktorisana verzija main.py sa poboljšanim upravljanjem procesima,
+postavljanjem CPU affinity-ja i prioritetom:
+- Thread kamere se izvršava isključivo na core 1 (CPU ID 1).
+- Thread upravljanja Nucleo-om se izvršava isključivo na core 4 (CPU ID 3)
+  uz postavljanje najvišeg prioriteta (-20).
+- Thread dashboard-a se izvršava isključivo na core 2 (CPU ID 2).
+Ostali procesi se izvršavaju bez pinovanja.
+"""
+
 import sys
 import subprocess
 import time
-
-sys.path.append(".")
-from multiprocessing import Queue, Event
+import os
+from multiprocessing import Process, Queue, Event
 import logging
 
+# Dodajemo putanju (ukoliko je potrebno)
+sys.path.append(".")
+
+# ===================================== GENERAL SETUP ==================================
 logging.basicConfig(level=logging.INFO)
-
-# ===================================== PROCESS IMPORTS ==================================
-
-from src.gateway.processGateway import processGateway
-from src.dashboard.processDashboard import processDashboard
-from src.hardware.camera.processCamera import processCamera
-from src.hardware.serialhandler.processSerialHandler import processSerialHandler
-from src.data.Semaphores.Semaphores import processSemaphores
-from src.data.TrafficCommunication.processTrafficCommunication import processTrafficCommunication
-from src.utils.ipManager.IpReplacement import IPManager
-# ------ New component imports starts here ------#
-
-# ------ New component imports ends here ------#
-# ======================================== SETTING UP ====================================
-allProcesses = list()
+logger = logging.getLogger()
 
 queueList = {
     "Critical": Queue(),
@@ -71,109 +73,165 @@ queueList = {
     "General": Queue(),
     "Config": Queue(),
 }
-logging = logging.getLogger()
 
+# ===================================== PROCESS IMPORTS ==================================
+from src.gateway.processGateway import processGateway
+from src.dashboard.processDashboard import processDashboard
+from src.hardware.camera.processCamera import processCamera
+from src.hardware.serialhandler.processSerialHandler import processSerialHandler
+from src.data.Semaphores.Semaphores import processSemaphores
+from src.data.TrafficCommunication.processTrafficCommunication import processTrafficCommunication
+from src.utils.ipManager.IpReplacement import IPManager
 
-Dashboard = True
-Camera = True
-Semaphores = False
-TrafficCommunication = False
-SerialHandler = True
+# ===================================== CONFIG FLAGS ==================================
+ENABLE_DASHBOARD = True
+ENABLE_CAMERA = True
+ENABLE_SEMAPHORES = False
+ENABLE_TRAFFIC_COMMUNICATION = False
+ENABLE_SERIAL_HANDLER = True
 
-# ------ New component flags starts here ------#
- 
-# ------ New component flags ends here ------#
-
-# ===================================== SETUP PROCESSES ==================================
-
-# Initializing gateway
-processGateway = processGateway(queueList, logging)
-processGateway.start()
-
-# Ip replacement
-path = './src/dashboard/frontend/src/app/webSocket/web-socket.service.ts'
-IpChanger = IPManager(path)
-IpChanger.replace_ip_in_file()
-
-
-# Initializing dashboard
-if Dashboard:
-    processDashboard = processDashboard( queueList, logging, debugging = False)
-    allProcesses.append(processDashboard)
-
-# Initializing camera
-if Camera:
-    processCamera = processCamera(queueList, logging , debugging = False)
-    allProcesses.append(processCamera)
-
-# Initializing semaphores
-if Semaphores:
-    processSemaphores = processSemaphores(queueList, logging, debugging = False)
-    allProcesses.append(processSemaphores)
-
-# Initializing GPS
-if TrafficCommunication:
-    processTrafficCommunication = processTrafficCommunication(queueList, logging, 3, debugging = False)
-    allProcesses.append(processTrafficCommunication)
-
-# Initializing serial connection NUCLEO - > PI
-if SerialHandler:
-    processSerialHandler = processSerialHandler(queueList, logging, debugging = False)
-    allProcesses.append(processSerialHandler)
-
-# ------ New component runs starts here ------#
- 
-# ------ New component runs ends here ------#
-
-# ===================================== START PROCESSES ==================================
-for process in allProcesses:
-    process.daemon = True
-    process.start()
-
-time.sleep(10)
-c4_bomb = r"""
-  _______________________
- /                       \
-| [██████]    [██████]    |
-| [██████]    [██████]    |
-| [██████]    [██████]    |
-|       TIMER: 00:10      |
-|_________________________|
- \_______________________/
-        LET'S GO!!!
-
-        Press ctrl+C to close
-"""
-
-print(c4_bomb)
-
-# ===================================== STAYING ALIVE ====================================
-blocker = Event()
-try:
-    blocker.wait()
-except KeyboardInterrupt:
-    print("\nCatching a KeyboardInterruption exception! Shutdown all processes.\n")
-    big_text = """
-    PPPP   L        EEEEE    A    SSSS  EEEEE       W      W   A   III TTTTT
-    P   P  L        E       A A   S     E           W      W  A A   I    T  
-    PPPP   L        EEEE   A   A   SSS  EEEE        W  W   W A   A  I    T  
-    P      L        E      AAAAA      S E           W W W W  AAAAA  I    T  
-    P      LLLLLL   EEEEE  A   A  SSSS  EEEEE        W   W   A   A III   T  
+# ===================================== HELPER FUNKCIJE ==================================
+def set_process_priority():
     """
-
-    print(big_text)
-    for proc in reversed(allProcesses):
-        print("Process stopped", proc)
-        proc.stop()
-    print("Process stopped", processGateway)
-    processGateway.stop()
-
-    big_text = """
-    PPPP   RRRR   EEEEE  SSSS  SSSS       CCCC  TTTTT RRRR    L          ++      CCCC      !!! 
-    P   P  R   R  E     S     S          C        T   R   R   L          ++      C         !!! 
-    PPPP   RRRR   EEEE   SSS   SSS       C        T   RRRR    L      ++++++++++  C         !!! 
-    P      R R    E         S     S      C        T   R R     L          ++      C         !!! 
-    P      R  R   EEEEE  SSSS  SSSS       CCCC    T   R  R    LLLLL      ++      CCCC      !!!
+    Primer za postavljanje prioriteta trenutnog procesa.
+    Ovaj primer koristi os.nice; može se proširiti pomoću os.setpriority.
     """
+    try:
+        current_nice = os.nice(0)
+        os.nice(-5)
+        logger.info(f"Process priority changed from {current_nice} to {os.nice(0)}")
+    except Exception as e:
+        logger.warning(f"Unable to change process priority: {e}")
 
-    print(big_text)
+def start_processes(processes):
+    """
+    Pokreće sve procese u listi, a zatim za specifične procese postavlja CPU affinity i,
+    za Nucleo, najviši prioritet.
+    - Kamera: affinity postavljen na core 1 (CPU ID 1)
+    - Dashboard: affinity postavljen na core 2 (CPU ID 2)
+    - Nucleo: affinity postavljen na core 4 (CPU ID 3) i prioritet -20
+    """
+    for proc in processes:
+        proc.start()
+        logger.info(f"Process started: {proc}")
+    # Kratka pauza kako bi se procesi pokrenuli i dobili PID
+    time.sleep(1)
+    # Postavljanje CPU affinity i prioriteta za određene procese
+    for proc in processes:
+        if isinstance(proc, processCamera):
+            try:
+                os.sched_setaffinity(proc.pid, {1})
+                logger.info(f"Set CPU affinity of camera process {proc.pid} to core 1")
+            except Exception as e:
+                logger.warning(f"Could not set affinity for camera process: {e}")
+        elif isinstance(proc, processSerialHandler):
+            try:
+                os.sched_setaffinity(proc.pid, {3})
+                logger.info(f"Set CPU affinity of Nucleo process {proc.pid} to core 4")
+                os.setpriority(os.PRIO_PROCESS, proc.pid, -20)
+                logger.info(f"Set priority of Nucleo process {proc.pid} to -20")
+            except Exception as e:
+                logger.warning(f"Could not set affinity/priority for Nucleo process: {e}")
+        elif isinstance(proc, processDashboard):
+            try:
+                os.sched_setaffinity(proc.pid, {2})
+                logger.info(f"Set CPU affinity of dashboard process {proc.pid} to core 2")
+            except Exception as e:
+                logger.warning(f"Could not set affinity for dashboard process: {e}")
+
+def initialize_processes(queueList, logger):
+    """
+    Inicijalizuje i vraća listu svih procesa koji treba da se pokrenu.
+    """
+    processes = []
+
+    # Inicijalizacija gateway procesa – pokreće se odmah
+    gateway = processGateway(queueList, logger)
+    gateway.start()
+    logger.info("Gateway process started.")
+
+    # Izmena IP adrese u frontend datoteci
+    ip_file_path = './src/dashboard/frontend/src/app/webSocket/web-socket.service.ts'
+    ip_manager = IPManager(ip_file_path)
+    ip_manager.replace_ip_in_file()
+    logger.info("IP address updated in frontend file.")
+
+    # Inicijalizacija ostalih komponenti
+    if ENABLE_DASHBOARD:
+        dashboard_proc = processDashboard(queueList, logger, debugging=False)
+        processes.append(dashboard_proc)
+
+    if ENABLE_CAMERA:
+        camera_proc = processCamera(queueList, logger, debugging=False)
+        processes.append(camera_proc)
+
+    if ENABLE_SEMAPHORES:
+        semaphores_proc = processSemaphores(queueList, logger, debugging=False)
+        processes.append(semaphores_proc)
+
+    if ENABLE_TRAFFIC_COMMUNICATION:
+        traffic_proc = processTrafficCommunication(queueList, logger, 3, debugging=False)
+        processes.append(traffic_proc)
+
+    if ENABLE_SERIAL_HANDLER:
+        serial_proc = processSerialHandler(queueList, logger, debugging=False)
+        processes.append(serial_proc)
+
+    return processes, gateway
+
+def stop_processes(processes, gateway):
+    """
+    Zaustavlja sve pokrenute procese i gateway.
+    """
+    logger.info("Shutdown signal received. Stopping processes...")
+    for proc in reversed(processes):
+        try:
+            proc.stop()  # Pretpostavljamo da svaka klasa implementira metodu stop()
+            proc.join(timeout=5)
+            logger.info(f"Process stopped: {proc}")
+        except Exception as e:
+            logger.error(f"Error stopping process {proc}: {e}")
+    try:
+        gateway.stop()
+        logger.info(f"Gateway process stopped: {gateway}")
+    except Exception as e:
+        logger.error(f"Error stopping gateway process: {e}")
+
+def print_banner():
+    c4_bomb = r"""
+     _______________________
+    /                     \
+   | [██████]   [██████]  |
+   | [██████]   [██████]  |
+   | [██████]   [██████]  |
+   |   TIMER: 00:10       |
+    \_____________________/
+       LET'S GO!!!
+    Press ctrl+C to close
+    """
+    print(c4_bomb)
+
+# ===================================== MAIN EXECUTION ==================================
+def main():
+    # Opcionalno – postavljanje prioriteta za glavni proces
+    set_process_priority()
+
+    processes, gateway = initialize_processes(queueList, logger)
+    start_processes(processes)
+
+    # Kratka pauza da se svi procesi inicijalizuju
+    time.sleep(10)
+    print_banner()
+
+    # Glavna petlja – čeka prekid (ctrl+C)
+    blocker = Event()
+    try:
+        blocker.wait()
+    except KeyboardInterrupt:
+        print("\nKeyboardInterrupt received. Stopping all processes...\n")
+        stop_processes(processes, gateway)
+        print("\nAll processes stopped. Exiting program.")
+        sys.exit(0)
+
+if __name__ == '__main__':
+    main()

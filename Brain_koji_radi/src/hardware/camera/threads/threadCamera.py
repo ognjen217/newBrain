@@ -184,55 +184,69 @@ class threadCamera(ThreadWithStop):
 	    return output_frame
 
     def run(self):
-        """Glavna petlja niti: obrađuje frame-ove, šalje ih putem gateway‑a te upravlja snimanjem."""
-        while self._running:
-            try:
-                # Provjera poruka za režim snimanja
-                recordRecv = self.recordSubscriber.receive()
-                if recordRecv is not None:
-                    self.recording = bool(recordRecv)
-                    if not self.recording and self.video_writer is not None:
-                        self.video_writer.release()
-                        self.video_writer = None
-                    elif self.recording and self.video_writer is None:
-                        fourcc = cv2.VideoWriter_fourcc(*"XVID")
-                        # Snimamo obrađeni frame (1024x540)
-                        self.video_writer = cv2.VideoWriter(
-                            "output_video_" + str(time.time()) + ".avi",
-                            fourcc,
-                            self.frame_rate,
-                            (1024, 540),
-                        )
-            except Exception as e:
-                self.logger.error(f"Record subscriber error: {e}")
+	    """Glavna petlja niti: obrađuje frame-ove, šalje ih putem gateway‑a te upravlja snimanjem."""
+	    while self._running:
+	        try:
+	            # Provjera poruka za režim snimanja
+	            recordRecv = self.recordSubscriber.receive()
+	            if recordRecv is not None:
+	                self.recording = bool(recordRecv)
+	                if not self.recording and self.video_writer is not None:
+	                    self.video_writer.release()
+	                    self.video_writer = None
+	                elif self.recording and self.video_writer is None:
+	                    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+	                    # Snimamo obrađeni frame (1024x540)
+	                    self.video_writer = cv2.VideoWriter(
+	                        "output_video_" + str(time.time()) + ".avi",
+	                        fourcc,
+	                        self.frame_rate,
+	                        (1024, 540),
+	                    )
+	        except Exception as e:
+	            self.logger.error(f"Record subscriber error: {e}")
 
-            try:
-                # Dohvati glavni frame
-                main_frame = self.camera.capture_array("main", wait=True)
-                if main_frame is None:
-                    self.logger.error("Main frame nije preuzet!")
-                    continue
-                self.logger.debug(f"Main frame shape: {main_frame.shape}")
-                
-                # Obrada glavnog frame-a (samo obrađeni frame se koristi)
-                processed_future = self.executor.submit(self.process_frame, main_frame)
-                processed_frame = processed_future.result()
-                if processed_frame is None:
-                    self.logger.error("Obrada glavnog frame-a nije uspjela.")
-                    continue
+	        try:
+	            # Početak merenja (uključujući capture)
+	            start_time = time.time()
+	            
+	            # Dohvati glavni frame
+	            main_frame = self.camera.capture_array("main", wait=True)
+	            capture_end_time = time.time()
+	            if main_frame is None:
+	                self.logger.error("Main frame nije preuzet!")
+	                continue
+	            self.logger.debug(f"Main frame shape: {main_frame.shape}")
+	            
+	            # Obrada glavnog frame-a (samo obrađeni frame se koristi)
+	            processed_future = self.executor.submit(self.process_frame, main_frame)
+	            processed_frame = processed_future.result()
+	            processing_end_time = time.time()
+	            if processed_frame is None:
+	                self.logger.error("Obrada glavnog frame-a nije uspjela.")
+	                continue
 
-                # Ako je snimanje aktivno, snimi obrađeni frame
-                if self.recording and self.video_writer is not None:
-                    self.video_writer.write(processed_frame)
+	            # Izračunavamo vreme preuzimanja, obrade i ukupno vreme
+	            capture_delay = capture_end_time - start_time
+	            processing_delay = processing_end_time - capture_end_time
+	            total_delay = processing_end_time - start_time
+	            self.logger.info(
+	                f"Frame delays: capture = {capture_delay:.3f}s, processing = {processing_delay:.3f}s, total = {total_delay:.3f}s"
+	            )
+	            
+	            # Ako je snimanje aktivno, snimi obrađeni frame
+	            if self.recording and self.video_writer is not None:
+	                self.video_writer.write(processed_frame)
 
-                ### PROMENA: Šaljemo samo obrađeni frame (output_frame) na dashboard
-                _, encodedImg = cv2.imencode(".jpg", processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                encodedImageData = base64.b64encode(encodedImg).decode("utf-8")
+	            ### PROMENA: Šaljemo samo obrađeni frame (output_frame) na dashboard
+	            _, encodedImg = cv2.imencode(".jpg", processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+	            encodedImageData = base64.b64encode(encodedImg).decode("utf-8")
 
-                self.mainCameraSender.send(encodedImageData)
-                self.serialCameraSender.send(encodedImageData)
-            except Exception as e:
-                self.logger.error(f"Camera thread error: {e}")
+	            self.mainCameraSender.send(encodedImageData)
+	            self.serialCameraSender.send(encodedImageData)
+	        except Exception as e:
+	            self.logger.error(f"Camera thread error: {e}")
+
 
     def stop(self):
         """Zaustavlja nit; ukoliko se snima, oslobađa VideoWriter."""
