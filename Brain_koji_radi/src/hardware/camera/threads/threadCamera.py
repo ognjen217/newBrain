@@ -18,16 +18,35 @@ from src.utils.messages.messageHandlerSender import messageHandlerSender
 from src.utils.messages.messageHandlerSubscriber import messageHandlerSubscriber
 from src.templates.threadwithstop import ThreadWithStop
 
+class FrameBuffer:
+    """Jednostavni buffer sa kapacitetom 1 koji drži frame i timestamp preuzimanja."""
+    def __init__(self):
+        self.frame = None
+        self.timestamp = 0
+        self.lock = threading.Lock()
+        self.event = threading.Event()
+
+    def update(self, frame):
+        with self.lock:
+            self.frame = frame
+            self.timestamp = time.time()
+            self.event.set()  # signaliziramo da je novi frame dostupan
+
+    def get(self):
+        with self.lock:
+            return self.frame, self.timestamp
+
+    def clear(self):
+        self.event.clear()
 
 class threadCamera(ThreadWithStop):
     """Thread koji rukuje funkcionalnostima kamere.
 
     Args:
-        queuesList (dict): Rečnik redova gdje je ključ tip poruke.
+        queuesList (dict): Rečnik redova gde je ključ tip poruke.
         logger (logging.Logger): Logger za debagovanje.
         debugger (bool): Flag za debagovanje.
     """
-
     def __init__(self, queuesList, logger, debugger):
         super(threadCamera, self).__init__()
         self.queuesList = queuesList
@@ -37,7 +56,7 @@ class threadCamera(ThreadWithStop):
         self.recording = False
         self.video_writer = None
 
-        # Inicijaliziramo executor za paralelnu obradu frame-ova
+        # Inicijaliziramo executor za paralelnu obradu (ostaje za eventualne dodatne zadatke)
         self.executor = ThreadPoolExecutor(max_workers=2)
 
         self.recordingSender = messageHandlerSender(self.queuesList, Recording)
@@ -48,6 +67,14 @@ class threadCamera(ThreadWithStop):
         self._init_camera()
         self.Queue_Sending()
         self.Configs()
+
+        # Kreiramo zajednički buffer za frame-ove
+        self.frame_buffer = FrameBuffer()
+        # Flagovi za kontrolu rada acquisition i processing niti
+        self._acquisition_running = threading.Event()
+        self._acquisition_running.set()
+        self._processing_running = threading.Event()
+        self._processing_running.set()
 
     def subscribe(self):
         """Pretplate na poruke (record, brightness, contrast)."""
@@ -89,164 +116,139 @@ class threadCamera(ThreadWithStop):
         return cv2.LUT(image, table)
 
     def process_frame(self, frame):
-	    """
-	    Obrada ulaznog frame‑a s fokusom na ROI koji je trapez definisan tačkama:
-	      (Korisničke tačke, sa donjim levim kao početkom – prebačeno u OpenCV koordinate)
-	        p1 = (0, height)
-	        p2 = (width, height)
-	        p3 = (int(2*width/3), int(2*height/3))
-	        p4 = (int(width/3), int(2*height/3))
-	    Izvršava se:
-	      - Promena veličine slike na 1024x540
-	      - Izdvajanje ROI-ja kao trapeza
-	      - Primena algoritma (gamma, grayscale, blur, Canny, Hough) samo nad ROI‑jem
-	      - Iscrtavanje detektovanih linija unutar ROI‑ja (zelena)
-	      - Preklapanje obrađenog ROI‑ja nazad u originalnu sliku
-	      - Iscrtavanje trapeznog okvira ROI‑ja (crveno)
-	    """
-	    if frame is None:
-	        self.logger.error("Primljen main frame je None.")
-	        return None
+        """
+        Obrada ulaznog frame‑a s fokusom na ROI definisanom trapezom.
+        (Ovaj metod ostaje nepromenjen.)
+        """
+        if frame is None:
+            self.logger.error("Primljen main frame je None.")
+            return None
 
-	    # Promena veličine
-	    resized_frame = cv2.resize(frame, (1024, 540))
-	    height, width = resized_frame.shape[:2]
+        resized_frame = cv2.resize(frame, (1024, 540))
+        height, width = resized_frame.shape[:2]
+        roi_pts = np.array([
+            [0, height],
+            [width, height],
+            [int(2 * width / 3), int(2 * height / 3)],
+            [int(width / 3), int(2 * height / 3)]
+        ], np.int32)
+        roi_pts[:, 0] = np.clip(roi_pts[:, 0], 0, width - 1)
+        roi_pts[:, 1] = np.clip(roi_pts[:, 1], 0, height - 1)
+        x, y, w, h = cv2.boundingRect(roi_pts)
+        if w == 0 or h == 0:
+            self.logger.error("Degenerisana ROI oblast. Preskačem frame.")
+            return resized_frame
+        roi_img = resized_frame[y:y+h, x:x+w].copy()
+        roi_pts_adjusted = roi_pts - [x, y]
+        mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.fillPoly(mask, [roi_pts_adjusted], 255)
+        self.logger.debug(f"ROI shape: {roi_img.shape}, mask shape: {mask.shape}")
+        try:
+            roi_only = cv2.bitwise_and(roi_img, roi_img, mask=mask)
+        except Exception as e:
+            self.logger.error(f"cv2.bitwise_and greška: {e}")
+            return resized_frame
 
-	    ### Definisanje trapeznog ROI-ja prema specifikacijama
-	    # Korisničke tačke (sa "donjim levim" početkom):
-	    #   p1 = (0,0), p2 = (width,0), p3 = (2/3*width, 1/3*height), p4 = (1/3*width, 1/3*height)
-	    # Prebacujemo u OpenCV koordinate (gornji levi je (0,0)):
-	    #   p1 = (0, height), p2 = (width, height),
-	    #   p3 = (int(2/3*width), int(2/3*height)), p4 = (int(width/3), int(2/3*height))
-	    roi_pts = np.array([
-	        [0, height],
-	        [width, height],
-	        [int(2 * width / 3), int(2 * height / 3)],
-	        [int(width / 3), int(2 * height / 3)]
-	    ], np.int32)
+        roi_gamma = self.adjust_gamma(roi_only, gamma=1.2)
+        gray = cv2.cvtColor(roi_gamma, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.blur(gray, (3, 3))
+        edges = cv2.Canny(blurred, 50, 150)
+        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=50, minLineLength=50, maxLineGap=20)
+        roi_processed = np.copy(roi_img)
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                cv2.line(roi_processed, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        else:
+            self.logger.debug("Nije pronađena nijedna linija u ROI-ju.")
+        roi_final = roi_img.copy()
+        roi_final[mask == 255] = roi_processed[mask == 255]
+        output_frame = np.copy(resized_frame)
+        output_frame[y:y+h, x:x+w] = roi_final
+        cv2.polylines(output_frame, [roi_pts], isClosed=True, color=(0, 0, 255), thickness=2)
+        return output_frame
 
-	    # Klipovanje tačaka da budu unutar granica slike
-	    roi_pts[:, 0] = np.clip(roi_pts[:, 0], 0, width - 1)
-	    roi_pts[:, 1] = np.clip(roi_pts[:, 1], 0, height - 1)
+    def capture_loop(self):
+        """Nit koja kontinuirano preuzima frame-ove i ažurira shared buffer."""
+        while self._running and self._acquisition_running.is_set():
+            try:
+                frame = self.camera.capture_array("main", wait=True)
+                if frame is not None:
+                    self.frame_buffer.update(frame)
+                else:
+                    self.logger.error("Capture loop: frame je None.")
+            except Exception as e:
+                self.logger.error(f"Capture loop error: {e}")
+            # Minimalna pauza da se ne preoptereti kamera
+            time.sleep(0.001)
 
-	    # Dobijamo bounding rectangle trapeznog ROI-ja
-	    x, y, w, h = cv2.boundingRect(roi_pts)
-	    if w == 0 or h == 0:
-	        self.logger.error("Degenerisana ROI oblast (bounding rect ima nulu za širinu ili visinu). Preskačem frame.")
-	        return resized_frame
+    def processing_loop(self):
+        """Nit koja čeka frame u bufferu, obrađuje ga, meri kašnjenje i, ako je snimanje aktivno, zapisuje ga u video."""
+        while self._running and self._processing_running.is_set():
+            # Prvo proveravamo da li je došla poruka za snimanje
+            try:
+                recordRecv = self.recordSubscriber.receive()
+                if recordRecv is not None:
+                    self.logger.info(f"Record command received: {recordRecv}")
+                    new_state = bool(recordRecv)
+                    if new_state != self.recording:
+                        self.recording = new_state
+                        if not self.recording and self.video_writer is not None:
+                            self.logger.info("Stopping recording; releasing video writer")
+                            self.video_writer.release()
+                            self.video_writer = None
+                        elif self.recording and self.video_writer is None:
+                            fourcc = cv2.VideoWriter_fourcc(*"XVID")
+                            filename = "output_video_" + str(time.time()) + ".avi"
+                            self.logger.info(f"Starting recording; initializing video writer with filename {filename}")
+                            self.video_writer = cv2.VideoWriter(
+                                filename,
+                                fourcc,
+                                self.frame_rate,
+                                (1024, 540),
+                            )
+            except Exception as e:
+                self.logger.error(f"Record subscriber error: {e}")
 
-	    roi_img = resized_frame[y:y+h, x:x+w].copy()
-
-	    # Podesimo tačke ROI-ja u odnosu na bounding rectangle
-	    roi_pts_adjusted = roi_pts - [x, y]
-
-	    # Kreiramo masku za ROI – obavezno tipa np.uint8 i iste veličine kao ROI slika
-	    mask = np.zeros((h, w), dtype=np.uint8)
-	    cv2.fillPoly(mask, [roi_pts_adjusted], 255)
-
-	    # Opcionalno: logovanje veličina i tipova
-	    self.logger.debug(f"ROI shape: {roi_img.shape}, mask shape: {mask.shape}")
-	    self.logger.debug(f"roi_img.dtype: {roi_img.dtype}, mask.dtype: {mask.dtype}")
-
-	    # Izolujemo ROI pomoću maske
-	    try:
-	        roi_only = cv2.bitwise_and(roi_img, roi_img, mask=mask)
-	    except Exception as e:
-	        self.logger.error(f"cv2.bitwise_and greška: {e}")
-	        return resized_frame
-
-	    ### Primena obrade isključivo na ROI
-	    roi_gamma = self.adjust_gamma(roi_only, gamma=1.2)
-	    gray = cv2.cvtColor(roi_gamma, cv2.COLOR_BGR2GRAY)
-	    blurred = cv2.blur(gray, (3, 3))
-	    edges = cv2.Canny(blurred, 50, 150)
-	    lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=50, minLineLength=50, maxLineGap=20)
-
-	    roi_processed = np.copy(roi_img)
-	    if lines is not None:
-	        for line in lines:
-	            x1, y1, x2, y2 = line[0]
-	            cv2.line(roi_processed, (x1, y1), (x2, y2), (0, 255, 0), 2)
-	    else:
-	        self.logger.debug("Nije pronađena nijedna linija u ROI-ju.")
-
-	    # Kombinujemo obrađeni ROI s originalnim ROI-jem samo unutar maske
-	    roi_final = roi_img.copy()
-	    roi_final[mask == 255] = roi_processed[mask == 255]
-
-	    # Vraćamo obrađeni ROI u originalnu sliku
-	    output_frame = np.copy(resized_frame)
-	    output_frame[y:y+h, x:x+w] = roi_final
-
-	    # Iscrtavamo trapezni ROI okvir (crveno) na izlaznoj slici
-	    cv2.polylines(output_frame, [roi_pts], isClosed=True, color=(0, 0, 255), thickness=2)
-
-	    return output_frame
+            # Čekamo na signal da je novi frame dostupan (timeout 5ms za bržu reakciju)
+            if not self.frame_buffer.event.wait(timeout=0.005):
+                continue
+            frame, capture_time = self.frame_buffer.get()
+            self.frame_buffer.clear()
+            if frame is None:
+                continue
+            proc_start = time.time()
+            processed_frame = self.process_frame(frame)
+            proc_end = time.time()
+            capture_delay = proc_start - capture_time
+            processing_delay = proc_end - proc_start
+            total_delay = proc_end - capture_time
+            '''self.logger.info(
+                f"Frame delays: capture = {capture_delay:.3f}s, processing = {processing_delay:.3f}s, total = {total_delay:.3f}s"
+            )'''
+            if processed_frame is None:
+                self.logger.error("Obrada frame-a nije uspjela.")
+                continue
+            if self.recording and self.video_writer is not None:
+                self.video_writer.write(processed_frame)
+            _, encodedImg = cv2.imencode(".jpg", processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            encodedImageData = base64.b64encode(encodedImg).decode("utf-8")
+            self.mainCameraSender.send(encodedImageData)
+            self.serialCameraSender.send(encodedImageData)
+            # Ne stavljamo dodatni sleep
 
     def run(self):
-	    """Glavna petlja niti: obrađuje frame-ove, šalje ih putem gateway‑a te upravlja snimanjem."""
-	    while self._running:
-	        try:
-	            # Provjera poruka za režim snimanja
-	            recordRecv = self.recordSubscriber.receive()
-	            if recordRecv is not None:
-	                self.recording = bool(recordRecv)
-	                if not self.recording and self.video_writer is not None:
-	                    self.video_writer.release()
-	                    self.video_writer = None
-	                elif self.recording and self.video_writer is None:
-	                    fourcc = cv2.VideoWriter_fourcc(*"XVID")
-	                    # Snimamo obrađeni frame (1024x540)
-	                    self.video_writer = cv2.VideoWriter(
-	                        "output_video_" + str(time.time()) + ".avi",
-	                        fourcc,
-	                        self.frame_rate,
-	                        (1024, 540),
-	                    )
-	        except Exception as e:
-	            self.logger.error(f"Record subscriber error: {e}")
-
-	        try:
-	            # Početak merenja (uključujući capture)
-	            start_time = time.time()
-	            
-	            # Dohvati glavni frame
-	            main_frame = self.camera.capture_array("main", wait=True)
-	            capture_end_time = time.time()
-	            if main_frame is None:
-	                self.logger.error("Main frame nije preuzet!")
-	                continue
-	            self.logger.debug(f"Main frame shape: {main_frame.shape}")
-	            
-	            # Obrada glavnog frame-a (samo obrađeni frame se koristi)
-	            processed_future = self.executor.submit(self.process_frame, main_frame)
-	            processed_frame = processed_future.result()
-	            processing_end_time = time.time()
-	            if processed_frame is None:
-	                self.logger.error("Obrada glavnog frame-a nije uspjela.")
-	                continue
-
-	            # Izračunavamo vreme preuzimanja, obrade i ukupno vreme
-	            capture_delay = capture_end_time - start_time
-	            processing_delay = processing_end_time - capture_end_time
-	            total_delay = processing_end_time - start_time
-	            self.logger.info(
-	                f"Frame delays: capture = {capture_delay:.3f}s, processing = {processing_delay:.3f}s, total = {total_delay:.3f}s"
-	            )
-	            
-	            # Ako je snimanje aktivno, snimi obrađeni frame
-	            if self.recording and self.video_writer is not None:
-	                self.video_writer.write(processed_frame)
-
-	            ### PROMENA: Šaljemo samo obrađeni frame (output_frame) na dashboard
-	            _, encodedImg = cv2.imencode(".jpg", processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-	            encodedImageData = base64.b64encode(encodedImg).decode("utf-8")
-
-	            self.mainCameraSender.send(encodedImageData)
-	            self.serialCameraSender.send(encodedImageData)
-	        except Exception as e:
-	            self.logger.error(f"Camera thread error: {e}")
-
+        """Glavna metoda koja pokreće acquisition i processing niti."""
+        self.capture_thread = threading.Thread(target=self.capture_loop, name="CameraCapture")
+        self.processing_thread = threading.Thread(target=self.processing_loop, name="CameraProcessing")
+        self.capture_thread.start()
+        self.processing_thread.start()
+        while self._running:
+            time.sleep(0.1)
+        self._acquisition_running.clear()
+        self._processing_running.clear()
+        self.capture_thread.join()
+        self.processing_thread.join()
 
     def stop(self):
         """Zaustavlja nit; ukoliko se snima, oslobađa VideoWriter."""

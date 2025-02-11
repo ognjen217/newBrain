@@ -27,14 +27,15 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE
 
 import inspect
+import select
 from multiprocessing import Pipe
 
 class messageHandlerSubscriber: 
-    """Class which will handle subscriber functionalities.\n
+    """Class which will handle subscriber functionalities.
     Args:
-        queuesList (dictionar of multiprocessing.queues.Queue): Dictionar of queues where the ID is the type of messages.
-        message (enum): A specific message
-        deliveryMode (string): Determines how messages are delivered from the queue. ("FIFO" or "LastOnly").
+        queuesList (dict): Dictionary of queues where the key is the message type.
+        message (enum): A specific message.
+        deliveryMode (string): Determines how messages are delivered from the queue ("FIFO" or "LastOnly").
         subscribe (bool): A flag to automatically subscribe the message.
     """
         
@@ -55,23 +56,27 @@ class messageHandlerSubscriber:
 
     def receive(self):
         """
-        Receives values from a pipe
-
-        Returns None if there no data in the Pipe
+        Receives values from a pipe.
+        Returns None if there is no data in the Pipe.
         """
-        if not self._pipeRecv.poll():
+        try:
+            # Koristimo select da blokiramo do 1 ms ukoliko nema podataka,
+            # čime se smanjuje busy waiting.
+            r, _, _ = select.select([self._pipeRecv.fileno()], [], [], 0.001)
+        except Exception as e:
+            print("Select error:", e)
+            return None
+        if not r:
             return None
         else:
             return self.receiveWithBlock()
         
     def receiveWithBlock(self):
         """
-        Waits until there is an existing message in the pipe 
-        
+        Waits until there is an existing message in the pipe.
         Returns:
-            message's data type: The received message.
+            The received message's value.
         """
-        
         message = self._pipeRecv.recv()
         messageType = type(message["value"]).__name__
         
@@ -81,24 +86,20 @@ class messageHandlerSubscriber:
             return message["value"]
         
         elif self._deliveryMode == "lastonly":
-            while (self._pipeRecv.poll()):
+            while self._pipeRecv.poll():
                 message = self._pipeRecv.recv()
-
+            
             if messageType != self._message.msgType.value:
                 print("WARNING! Message type and value type are not matching.", self._message, "received:", messageType, "expected:", self._message.msgType.value)
             return message["value"]
         
     def empty(self):
-        """
-        Empties the receiving pipe of any existing data.
-        """
+        """Empties the receiving pipe of any existing data."""
         while self._pipeRecv.poll():
             self._pipeRecv.recv()
 
     def subscribe(self):
-        """
-        Subscribes to messages.
-        """
+        """Subscribes to messages."""
         self._queuesList["Config"].put(
             {
                 "Subscribe/Unsubscribe": "subscribe",
@@ -109,9 +110,7 @@ class messageHandlerSubscriber:
         )
 
     def unsubscribe(self):
-        """
-        Unsubscribes from messages.
-        """
+        """Unsubscribes from messages."""
         self._queuesList["Config"].put(
             {
                 "Subscribe/Unsubscribe": "unsubscribe",
@@ -122,29 +121,21 @@ class messageHandlerSubscriber:
         )
 
     def isDataInPipe(self):
-        """
-        Checks if there is any data in the receiving pipe.
-
+        """Checks if there is any data in the receiving pipe.
         Returns:
             bool: True if data is available, False otherwise.
         """
         return self._pipeRecv.poll()
 
     def setDeliveryModeToFIFO(self):
-        """
-        Sets delivery mode to FIFO.
-        """
+        """Sets delivery mode to FIFO."""
         self._deliveryMode = "fifo"
 
     def setDeliveryModeToLastOnly(self):
-        """
-        Sets delivery mode to LastOnly.
-        """
+        """Sets delivery mode to LastOnly."""
         self._deliveryMode = "lastonly"
 
     def __del__(self): 
-        """
-        Cleans up by closing the pipes.
-        """
+        """Cleans up by closing the pipes."""
         self._pipeRecv.close()
         self._pipeSend.close()

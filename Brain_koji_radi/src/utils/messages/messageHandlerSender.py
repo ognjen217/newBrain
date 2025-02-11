@@ -1,20 +1,20 @@
-# Copyright (c) 2019, Bosch Engineering Center Cluj and BFMC organizers
+# Copyright (c) 2019, Bosch Engineering Center Cluj and BFMC orginazers
 # All rights reserved.
-
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-
-# 1. Redistributions of source code must retain the above copyright notice, this
-#    list of conditions and the following disclaimer.
-
-# 2. Redistributions in binary form must reproduce the above copyright notice,
-#    this list of conditions and the following disclaimer in the documentation
-#    and/or other materials provided with the distribution.
-
+#
+#  1. Redistributions of source code must retain the above copyright notice, this
+#     list of conditions and the following disclaimer.
+#
+#  2. Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+#
 # 3. Neither the name of the copyright holder nor the names of its
-#    contributors may be used to endorse or promote products derived from
-#    this software without specific prior written permission.
-
+#     contributors may be used to endorse or promote products derived from
+#     this software without specific prior written permission.
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -27,10 +27,11 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE
 
 class messageHandlerSender:
-    """Class which will handle sender functionalities.\n
+    """Class which will handle sender functionalities.
+    
     Args:
-        queuesList (dictionary of multiprocessing.queues.Queue): Dictionary of queues where the ID is the type of messages.
-        message (enum): A specific message
+        queuesList (dictionary of multiprocessing.queues.Queue): Dictionary of queues where the key is the type of messages.
+        message (enum): A specific message.
     """
         
     def __init__(self, queuesList, message):
@@ -39,16 +40,24 @@ class messageHandlerSender:
 
     def send(self, value):
         """
-        Puts a value into the queuesList
-
+        Puts a value into the queuesList if the queue is empty.
+        This prevents sending a new frame if the previous one is still waiting.
+        
         Args:
-            value (any type): The value to be put into the queue. This can be of any type
+            value (any type): The value to be put into the queue. This can be of any type.
         """
-        self.queuesList[self.message.Queue.value].put(
-            {
+        try:
+            queue = self.queuesList[self.message.Queue.value]
+            # Ako red nije prazan, ne šaljemo novu poruku
+            if not queue.empty():
+                # Možete dodati i log poruku ovde ako želite
+                # print("Queue is not empty. Dropping frame.")
+                return
+            queue.put({
                 "Owner": self.message.Owner.value,
                 "msgID": self.message.msgID.value,
                 "msgType": self.message.msgType.value,
                 "msgValue": value
-            }
-        )
+            })
+        except Exception as e:
+            print(f"WARNING: Failed to send message ({self.message}): {e}")

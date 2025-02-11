@@ -59,6 +59,7 @@ import time
 import os
 from multiprocessing import Process, Queue, Event
 import logging
+import json
 
 # Dodajemo putanju (ukoliko je potrebno)
 sys.path.append(".")
@@ -109,7 +110,7 @@ def start_processes(processes):
     za Nucleo, najviši prioritet.
     - Kamera: affinity postavljen na core 1 (CPU ID 1)
     - Dashboard: affinity postavljen na core 2 (CPU ID 2)
-    - Nucleo: affinity postavljen na core 4 (CPU ID 3) i prioritet -20
+    - Nucleo: affinity postavljen na core 3 (CPU ID 3) i prioritet -20
     """
     for proc in processes:
         proc.start()
@@ -121,21 +122,22 @@ def start_processes(processes):
         if isinstance(proc, processCamera):
             try:
                 os.sched_setaffinity(proc.pid, {1})
+                os.setpriority(os.PRIO_PROCESS, proc.pid, 0)
                 logger.info(f"Set CPU affinity of camera process {proc.pid} to core 1")
             except Exception as e:
-                logger.warning(f"Could not set affinity for camera process: {e}")
+                logger.warning(f"Could not set affinity/priority for CAMERA process: {e}")
+
         elif isinstance(proc, processSerialHandler):
             try:
-                os.sched_setaffinity(proc.pid, {3})
-                logger.info(f"Set CPU affinity of Nucleo process {proc.pid} to core 4")
-                os.setpriority(os.PRIO_PROCESS, proc.pid, -20)
-                logger.info(f"Set priority of Nucleo process {proc.pid} to -20")
+                os.sched_setaffinity(proc.pid, {2})
+                logger.info(f"Set CPU affinity of Nucleo process {proc.pid} to core 2")
+                os.setpriority(os.PRIO_PROCESS, proc.pid, 0)
             except Exception as e:
                 logger.warning(f"Could not set affinity/priority for Nucleo process: {e}")
         elif isinstance(proc, processDashboard):
             try:
-                os.sched_setaffinity(proc.pid, {2})
-                logger.info(f"Set CPU affinity of dashboard process {proc.pid} to core 2")
+               #os.sched_setaffinity(proc.pid, {3})
+                logger.info(f"Dasboart init started")
             except Exception as e:
                 logger.warning(f"Could not set affinity for dashboard process: {e}")
 
@@ -199,13 +201,13 @@ def stop_processes(processes, gateway):
 
 def print_banner():
     c4_bomb = r"""
-     _______________________
-    /                     \
-   | [██████]   [██████]  |
-   | [██████]   [██████]  |
-   | [██████]   [██████]  |
-   |   TIMER: 00:10       |
-    \_____________________/
+     ______________________
+    /                      \
+   | [██████]     [██████] |
+   | [██████]     [██████] |
+   | [██████]     [██████] |
+   |   TIMER:       00:10  |
+    \______________________/
        LET'S GO!!!
     Press ctrl+C to close
     """
