@@ -94,7 +94,7 @@ export class WebSocketService {
 
   // Primena throttleTime operatora da se uzima samo poslednja poruka u svakom intervalu od 33ms (~30 fps)
   receiveMemoryUsage(): Observable<any> {
-    return this.webSocket.fromEvent('memory_channel').pipe(throttleTime(1000));
+    return this.webSocket.fromEvent('memory_channel').pipe(throttleTime(50));
   }
 
   receiveImuData(): Observable<any> {
