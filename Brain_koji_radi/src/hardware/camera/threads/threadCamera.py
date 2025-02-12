@@ -5,6 +5,10 @@ import picamera2
 import time
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
+import psutil 
+from ultralytics import YOLO 
+import torch
+import os
 
 from src.utils.messages.allMessages import (
     mainCamera,
@@ -22,9 +26,17 @@ class FrameBuffer:
     """Jednostavni buffer sa kapacitetom 1 koji drži frame i timestamp preuzimanja."""
     def __init__(self):
         self.frame = None
+        # Kreiramo poseban queue za YOLO detekcije
+        self.queuesList["yolo_output"] = threading.Queue()
+
+        # Pokrećemo YOLO detekcioni thread
+        self.yolo_thread = ObjectDetectionThread(self.frame_buffer, self.queuesList, self.logger)
+        self.yolo_thread.start()
+
         self.timestamp = 0
         self.lock = threading.Lock()
         self.event = threading.Event()
+     
 
     def update(self, frame):
         with self.lock:
@@ -255,6 +267,10 @@ class threadCamera(ThreadWithStop):
         if self.recording and self.video_writer is not None:
             self.video_writer.release()
         super(threadCamera, self).stop()
+        if self.yolo_thread is not None:
+            self.yolo_thread.stop()
+            self.yolo_thread.join()
+
 
     def start(self):
         super(threadCamera, self).start()
@@ -272,3 +288,92 @@ class threadCamera(ThreadWithStop):
         self.camera.start()
         # Pauza za inicijalizaciju kamere
         time.sleep(2)
+
+class ObjectDetectionThread(threading.Thread):
+    def __init__(self, frame_buffer, queuesList, logger, model_path="Brain_koji_radi/Models/best.pt"):
+        super(ObjectDetectionThread, self).__init__()
+        self.frame_buffer = frame_buffer
+        self.queuesList = queuesList
+        self.logger = logger
+        self.running = True
+
+        # Učitavanje YOLOv8 modela
+        self.model = YOLO(model_path)
+
+        # Podesi CPU affinity na core 4
+        self.cpu_core = 4  # Možeš menjati ako treba drugi core
+        self.set_cpu_affinity()
+
+    def set_cpu_affinity(self):
+        """Postavlja da se ovaj thread izvršava isključivo na CPU core 4."""
+        pid = os.getpid()
+        p = psutil.Process(pid)
+        p.cpu_affinity([self.cpu_core])  # Postavlja affinity na core 4
+        p.nice(psutil.HIGH_PRIORITY_CLASS)  # Postavlja najviši prioritet
+
+    def detect_objects(self, frame):
+        """Pokreće YOLO model i vraća listu detekcija."""
+        results = self.model(frame)
+        detections = []
+        for result in results:
+            for box in result.boxes:
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                conf = float(box.conf[0])
+                cls = int(box.cls[0])
+                detections.append((x1, y1, x2, y2, conf, cls))
+        return detections
+
+    def run(self):
+        """Glavna petlja za preuzimanje frame-ova iz buffera i detekciju objekata."""
+        while self.running:
+            # Čekamo na novi frame u bufferu (timeout 10ms)
+            if not self.frame_buffer.event.wait(timeout=0.01):
+                continue
+            
+            frame, timestamp = self.frame_buffer.get()
+            self.frame_buffer.clear()
+
+            if frame is None:
+                continue
+
+            start_time = time.time()
+            detections = self.detect_objects(frame)
+            end_time = time.time()
+
+            processing_time = end_time - start_time
+            self.logger.info(f"YOLOv8 processing time: {processing_time:.3f}s, Detections: {len(detections)}")
+
+            # Crtanje bounding boxova
+            for x1, y1, x2, y2, conf, cls in detections:
+                cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+                cv2.putText(frame, f"{cls} {conf:.2f}", (int(x1), int(y1) - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+            # Konvertuj u JPEG format za slanje preko queue-a
+            _, encodedImg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            encodedImageData = base64.b64encode(encodedImg).decode("utf-8")
+
+            # Pošalji obrađeni frame preko queue sistema
+            self.queuesList["yolo_output"].put(encodedImageData)
+
+    def stop(self):
+        """Zaustavlja thread."""
+        self.running = False
+
+
+
+if __name__ == "__main__":
+    cam = threadCamera({}, None, True)  # Pokrećemo kameru u debug modu
+    while True:
+        if not cam.queuesList["yolo_output"].empty():
+            encoded_image = cam.queuesList["yolo_output"].get()
+            decoded_image = base64.b64decode(encoded_image)
+            np_arr = np.frombuffer(decoded_image, dtype=np.uint8)
+            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            cv2.imshow("YOLOv8 Detection", frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cam.stop()
+    cv2.destroyAllWindows()

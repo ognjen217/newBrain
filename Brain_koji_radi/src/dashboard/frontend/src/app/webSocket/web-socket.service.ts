@@ -63,7 +63,7 @@ export class WebSocketService {
     // URL postavljen je na lokalnu mrežu. Ako se RPi i klijent nalaze na istoj mreži,
     // to može dodatno smanjiti latenciju.
     this.webSocket = new Socket({
-      url: "http://192.168.100.38:5005",
+      url: "http://172.20.10.3:5005",
       options: {},
     });
 
@@ -94,7 +94,7 @@ export class WebSocketService {
 
   // Primena throttleTime operatora da se uzima samo poslednja poruka u svakom intervalu od 33ms (~30 fps)
   receiveMemoryUsage(): Observable<any> {
-    return this.webSocket.fromEvent('memory_channel').pipe(throttleTime(50));
+    return this.webSocket.fromEvent('memory_channel').pipe(throttleTime(33));
   }
 
   receiveImuData(): Observable<any> {
