@@ -9,33 +9,15 @@ import os
 import psutil
 from picamera2 import Picamera2
 
-
-# Custom modules – pretpostavljamo da su dostupni u projektu
-from src.utils.messages.allMessages import (
-    mainCamera,
-    serialCamera,
-    Recording,
-    Record,
-    Brightness,
-    Contrast,
-)
-
-from src.utils.messages.messageHandlerSender import messageHandlerSender
-from src.utils.messages.messageHandlerSubscriber import messageHandlerSubscriber
-from src.templates.threadwithstop import ThreadWithStop
-
-
-# Dobijamo direktorijum u kojem se nalazi trenutna skripta
-script_dir = os.path.dirname(os.path.abspath(__file__))
-# Kreiramo apsolutnu putanju do modela koji se nalazi u istom folderu
-model_path_yolo = os.path.join(script_dir, "best.pt")
-
-
-
-
 class FrameBuffer:
     """Simple buffer to store frames and timestamps."""
     def __init__(self):
+        if self.queuesList is None:
+            self.queuesList = {}
+
+        elif not isinstance(self.queuesList, dict):
+            raise TypeError("queuesList must be a dictionary!")
+
         self.frame = None
         self.timestamp = 0
         self.lock = threading.Lock()
@@ -75,6 +57,7 @@ class ThreadCamera(threading.Thread):
         self.camera = Picamera2()
         self._init_camera()
         self.frame_count = 0
+        model_path_yolo = os.path.abspath(os.path.join(os.path.dirname(__file__), "best.pt"))
         self.yolo_model = YOLO(model_path_yolo)
 
     def _init_camera(self):
@@ -116,7 +99,22 @@ class ThreadCamera(threading.Thread):
                 continue
             _, encodedImg = cv2.imencode(".jpg", processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             encodedImageData = base64.b64encode(encodedImg).decode("utf-8")
-            self.queuesList.setdefault("processed_output", threading.Queue()).put({"parity": "even", "image": encodedImageData})
+            if "processed_output" not in self.queuesList:
+                if self.queuesList is not None and isinstance(self.queuesList, dict):
+                    if self.queuesList is not None and isinstance(self.queuesList, dict):
+                        if "processed_output" not in self.queuesList:
+                            if self.queuesList is not None and isinstance(self.queuesList, dict):
+                                if "processed_output" not in self.queuesList:
+                                    self.queuesList["processed_output"] = threading.Queue()
+                                self.queuesList["processed_output"].put({"parity": "even", "image": encodedImageData})
+                            else:
+                                self.logger.error(f"Invalid queuesList type: {type(self.queuesList)}")
+
+                            self.queuesList["processed_output"].put({"parity": "even", "image": encodedImageData})
+                else:
+                    self.logger.error("queuesList is not initialized properly in processing_loop_even")
+
+            self.queuesList["processed_output"].put({"parity": "even", "image": encodedImageData})
 
     def processing_loop_odd(self):
         """Thread that processes odd frames using YOLO."""
@@ -138,7 +136,20 @@ class ThreadCamera(threading.Thread):
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             _, encodedImg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             encodedImageData = base64.b64encode(encodedImg).decode("utf-8")
-            self.queuesList.setdefault("yolo_output", threading.Queue()).put({"parity": "odd", "image": encodedImageData})
+            if "yolo_output" not in self.queuesList:
+                if self.queuesList is not None and isinstance(self.queuesList, dict):
+                    if self.queuesList is not None and isinstance(self.queuesList, dict):
+                        if "yolo_output" not in self.queuesList:
+                            self.queuesList["yolo_output"] = threading.Queue()
+                        self.queuesList["yolo_output"].put({"parity": "odd", "image": encodedImageData})
+                else:
+                    self.logger.error(f"Invalid queuesList type: {type(self.queuesList)}")
+
+                self.queuesList["yolo_output"].put({"parity": "odd", "image": encodedImageData})
+                else:
+                    self.logger.error("queuesList is not initialized properly in processing_loop_odd")
+
+            self.queuesList["yolo_output"].put({"parity": "odd", "image": encodedImageData})
 
     def process_frame(self, frame):
         """Applies Hough Transform for line detection."""
